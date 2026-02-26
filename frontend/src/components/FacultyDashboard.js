@@ -1,172 +1,235 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { gsap } from 'gsap';
 import {
   Scan, Play, Square, Users, CheckCircle2, AlertTriangle,
-  Download, BarChart2, Settings, LogOut, Wifi, Camera,
-  Clock, Eye, ChevronRight, Bell, Search, Activity,
+  Download, BarChart2, Settings, LogOut, Camera,
+  Eye, ChevronRight, Bell, Search, Activity,
   Filter, FileText, Shield, TrendingUp, Menu, X
 } from 'lucide-react';
+import { facultyApi, clearAuth, downloadBlob } from '../api';
+import { useAuth } from '../context/AuthContext';
 import './FacultyDashboard.css';
 
-const STUDENTS = [
-  { roll:'10268', name:'Devansh Nayak',    face:true,  mac:true,  time:'10:32 AM', conf:94.1 },
-  { roll:'10275', name:'Blaise Rodrigues', face:true,  mac:true,  time:'10:33 AM', conf:97.3 },
-  { roll:'10283', name:'Daksh Thakkar',    face:true,  mac:true,  time:'10:33 AM', conf:91.8 },
-  { roll:'10287', name:'Aryan Verma',      face:true,  mac:false, time:'—',        conf:88.4 },
-  { roll:'10290', name:'Priya Mehta',      face:false, mac:false, time:'—',        conf:null  },
-  { roll:'10292', name:'Rahul Sharma',     face:true,  mac:true,  time:'10:35 AM', conf:95.2 },
-  { roll:'10294', name:'Sneha Patil',      face:true,  mac:true,  time:'10:36 AM', conf:89.7 },
-  { roll:'10296', name:'Aditya Kulkarni',  face:false, mac:true,  time:'—',        conf:null  },
-];
-
-const NAV = [
-  { id:'live',       icon:<Activity  size={17}/>, label:'Live Session' },
-  { id:'attendance', icon:<Users     size={17}/>, label:'Attendance'   },
-  { id:'analytics',  icon:<BarChart2 size={17}/>, label:'Analytics'    },
-  { id:'reports',    icon:<FileText  size={17}/>, label:'Reports'      },
-  { id:'settings',   icon:<Settings  size={17}/>, label:'Settings'     },
-];
-
 function StatusBadge({ face, mac }) {
-  if (face && mac)   return <span className="fd__badge fd__badge-green"><CheckCircle2 size={9}/>Present</span>;
-  if (face && !mac)  return <span className="fd__badge fd__badge-amber"><AlertTriangle size={9}/>No Device</span>;
-  if (!face && mac)  return <span className="fd__badge fd__badge-amber"><Eye size={9}/>No Face</span>;
-  return               <span className="fd__badge fd__badge-red"><AlertTriangle size={9}/>Absent</span>;
+  if (face && mac) return <span className="fd__badge fd__badge-green"><CheckCircle2 size={9} />Present</span>;
+  if (face && !mac) return <span className="fd__badge fd__badge-amber"><AlertTriangle size={9} />No Device</span>;
+  if (!face && mac) return <span className="fd__badge fd__badge-amber"><Eye size={9} />No Face</span>;
+  return <span className="fd__badge fd__badge-red"><AlertTriangle size={9} />Absent</span>;
 }
 
 function Sparkline({ data, color }) {
+  if (!data || data.length < 2) return null;
   const max = Math.max(...data), min = Math.min(...data);
-  const pts = data.map((v,i) => `${(i/(data.length-1))*100},${100-((v-min)/(max-min+1))*80}`).join(' ');
+  const pts = data.map((v, i) => `${(i / (data.length - 1)) * 100},${100 - ((v - min) / (max - min + 1)) * 80}`).join(' ');
   return (
-    <svg viewBox="0 0 100 100" style={{width:72,height:28}} preserveAspectRatio="none">
-      <polyline points={pts} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+    <svg viewBox="0 0 100 100" style={{ width: 72, height: 28 }} preserveAspectRatio="none">
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
 
+const NAV = [
+  { id: 'live', icon: <Activity size={17} />, label: 'Live Session' },
+  { id: 'attendance', icon: <Users size={17} />, label: 'Attendance' },
+  { id: 'analytics', icon: <BarChart2 size={17} />, label: 'Analytics' },
+  { id: 'reports', icon: <FileText size={17} />, label: 'Reports' },
+  { id: 'settings', icon: <Settings size={17} />, label: 'Settings' },
+];
+
 export default function FacultyDashboard() {
   const navigate = useNavigate();
-  const [tab,        setTab]        = useState('live');
-  const [session,    setSession]    = useState(false);
-  const [timer,      setTimer]      = useState(0);
-  const [students,   setStudents]   = useState(STUDENTS);
-  const [query,      setQuery]      = useState('');
-  const [sidebarOpen,setSidebarOpen]= useState(false);
-  const sidebarRef = useRef(null);
-  const mainRef    = useRef(null);
-  const timerRef   = useRef(null);
+  const { logout } = useAuth();
+  const [tab, setTab] = useState('live');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const mainRef = useRef(null);
+  const timerRef = useRef(null);
 
+  /* ── API state ── */
+  const [profile, setProfile] = useState(null);
+  const [subjects, setSubjects] = useState([]);
+  const [activeSession, setActiveSession] = useState(null);
+  const [timer, setTimer] = useState(0);
+  const [students, setStudents] = useState([]);
+  const [analytics, setAnalytics] = useState(null);
+  const [selectedSubject, setSelectedSubject] = useState('');
+
+  const initials = profile ? profile.name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase() : '??';
+
+  /* ── Load profile + subjects + active session on mount ── */
   useEffect(() => {
-    const tl = gsap.timeline();
-    tl.fromTo(sidebarRef.current, {x:-60,opacity:0},{x:0,opacity:1,duration:0.55,ease:'power3.out'})
-      .fromTo(mainRef.current,    {opacity:0,y:18}, {opacity:1,y:0,duration:0.55,ease:'power2.out'},'-=0.3')
-      .fromTo('.fd__stat-tile',   {opacity:0,y:20}, {opacity:1,y:0,duration:0.4,stagger:0.07,ease:'power2.out'},'-=0.25');
+    gsap.fromTo(mainRef.current, { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.55, ease: 'power2.out' });
+    Promise.all([
+      facultyApi.getProfile(),
+      facultyApi.getSubjects(),
+      facultyApi.getActiveSession(),
+    ]).then(([prof, subj, sess]) => {
+      setProfile(prof);
+      setSubjects(subj || []);
+      if (subj?.length) setSelectedSubject(subj[0].id);
+      if (sess) { setActiveSession(sess); }
+    }).catch(err => {
+      if (err.message?.includes('401')) handleLogout();
+    });
+    // eslint-disable-next-line
   }, []);
 
+  /* ── Tab animation ── */
   useEffect(() => {
-    gsap.fromTo('.fd__tab-content', {opacity:0,y:14},{opacity:1,y:0,duration:0.38,ease:'power2.out'});
+    gsap.fromTo('.fd__tab-content', { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.38, ease: 'power2.out' });
   }, [tab]);
 
+  /* ── Timer when session is active ── */
   useEffect(() => {
-    if (session) { timerRef.current = setInterval(() => setTimer(t => t+1), 1000); }
-    else         { clearInterval(timerRef.current); }
-    return ()    => clearInterval(timerRef.current);
-  }, [session]);
+    if (activeSession) {
+      const start = new Date(activeSession.started_at).getTime();
+      timerRef.current = setInterval(() => {
+        setTimer(Math.floor((Date.now() - start) / 1000));
+      }, 1000);
+      // Load students for active session
+      facultyApi.getSessionStudents(activeSession.id)
+        .then(setStudents).catch(console.error);
+    } else {
+      clearInterval(timerRef.current);
+      setTimer(0);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [activeSession]);
 
-  const fmt = s => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
-  const present = students.filter(s=>s.face&&s.mac).length;
-  const pending = students.filter(s=>(s.face&&!s.mac)||(!s.face&&s.mac)).length;
-  const absent  = students.filter(s=>!s.face&&!s.mac).length;
-  const filtered = students.filter(s=>s.name.toLowerCase().includes(query.toLowerCase())||s.roll.includes(query));
+  /* ── Analytics when tab opens ── */
+  useEffect(() => {
+    if (tab === 'analytics') {
+      facultyApi.getAnalytics().then(setAnalytics).catch(console.error);
+    }
+  }, [tab]);
 
-  const override = (roll) => setStudents(prev=>prev.map(s=>
-    s.roll===roll ? {...s,face:true,mac:true,time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} : s
-  ));
+  /* ── Attendance tab: refresh students ── */
+  useEffect(() => {
+    if (tab === 'attendance' && activeSession) {
+      facultyApi.getSessionStudents(activeSession.id).then(setStudents).catch(console.error);
+    }
+  }, [tab, activeSession]);
+
+  const handleLogout = useCallback(() => { logout(); clearAuth(); navigate('/'); }, [logout, navigate]);
+  const fmt = s => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+
+  const startSession = async () => {
+    if (!selectedSubject) return;
+    try {
+      const sess = await facultyApi.startSession(selectedSubject);
+      setActiveSession(sess);
+    } catch (err) { alert(err.message); }
+  };
+
+  const endSession = async () => {
+    if (!activeSession) return;
+    try {
+      await facultyApi.endSession(activeSession.id);
+      setActiveSession(null);
+      setStudents([]);
+    } catch (err) { alert(err.message); }
+  };
+
+  const override = async (studentId, currentlyPresent) => {
+    if (!activeSession) return;
+    try {
+      await facultyApi.overrideAttendance(activeSession.id, studentId, !currentlyPresent);
+      // Refresh student list
+      facultyApi.getSessionStudents(activeSession.id).then(setStudents);
+    } catch (err) { alert(err.message); }
+  };
+
+  const exportReport = async (type) => {
+    try {
+      const blob = await facultyApi.exportReport(type);
+      downloadBlob(blob, `${type}_report.csv`);
+    } catch (err) { alert('Export failed: ' + err.message); }
+  };
+
+  const filtered = students.filter(s =>
+    s.name?.toLowerCase().includes(query.toLowerCase()) || s.roll?.includes(query)
+  );
+
+  const present = students.filter(s => s.face_verified && s.mac_verified).length;
+  const absent = students.filter(s => !s.face_verified && !s.mac_verified).length;
+  const pending = students.length - present - absent;
 
   const STATS = [
-    {label:'Present',  val:present, sub:`/${students.length}`, color:'var(--green)', icon:<CheckCircle2 size={17}/>, data:[32,38,35,40,42,38,present]},
-    {label:'Pending',  val:pending, sub:'',                    color:'var(--amber)', icon:<AlertTriangle size={17}/>,data:[4,3,5,2,3,4,pending]},
-    {label:'Absent',   val:absent,  sub:`/${students.length}`, color:'var(--red)',   icon:<Eye size={17}/>,           data:[12,10,14,8,10,11,absent]},
-    {label:'Enrolled', val:students.length, sub:'total',       color:'var(--cyan)',  icon:<Users size={17}/>,          data:[60,60,62,62,62,62,students.length]},
+    { label: 'Present', val: present, sub: `/${students.length}`, color: 'var(--green)', icon: <CheckCircle2 size={17} />, data: [32, 38, 35, 40, 42, 38, present] },
+    { label: 'Pending', val: pending, sub: '', color: 'var(--amber)', icon: <AlertTriangle size={17} />, data: [4, 3, 5, 2, 3, 4, pending] },
+    { label: 'Absent', val: absent, sub: `/${students.length}`, color: 'var(--red)', icon: <Eye size={17} />, data: [12, 10, 14, 8, 10, 11, absent] },
+    { label: 'Enrolled', val: students.length, sub: 'total', color: 'var(--cyan)', icon: <Users size={17} />, data: [60, 60, 62, 62, 62, 62, students.length] },
   ];
+
+  const dateStr = new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
   return (
     <div className="fd__shell">
+      {sidebarOpen && <div className="fd__sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
 
-      {/* Mobile overlay */}
-      {sidebarOpen && <div className="fd__sidebar-overlay" onClick={()=>setSidebarOpen(false)} />}
-
-      {/* ── Sidebar ── */}
-      <aside ref={sidebarRef} className={`fd__sidebar${sidebarOpen?' fd__sidebar-open':''}`}>
+      {/* Sidebar */}
+      <aside className={`fd__sidebar${sidebarOpen ? ' fd__sidebar-open' : ''}`}>
+        <button className="fd__sidebar-close" onClick={() => setSidebarOpen(false)} title="Close"><X size={15} /></button>
         <div className="fd__sidebar-logo">
-          <div className="fd__sidebar-logo-icon"><Scan size={14} color="var(--cyan)"/></div>
+          <div className="fd__sidebar-logo-icon"><Scan size={14} color="var(--cyan)" /></div>
           <div className="fd__sidebar-logo-text">
             <div className="fd__sidebar-logo-name">UPASTITHI</div>
             <div className="fd__sidebar-logo-sub">FACULTY PANEL</div>
           </div>
         </div>
-
         <div className="fd__sidebar-profile">
-          <div className="fd__sidebar-avatar">PS</div>
+          <div className="fd__sidebar-avatar">{initials}</div>
           <div className="fd__sidebar-profile-info">
-            <div className="fd__sidebar-profile-name">Prof. Sharma</div>
-            <div className="fd__sidebar-profile-id">EMP-2024-042 · Comp Dept</div>
+            <div className="fd__sidebar-profile-name">{profile?.name || 'Loading…'}</div>
+            <div className="fd__sidebar-profile-id">{profile?.emp_id || '—'} · {profile?.department || '—'}</div>
           </div>
         </div>
-
         <nav className="fd__sidebar-nav">
-          {NAV.map(item=>(
+          {NAV.map(item => (
             <button key={item.id}
-              className={`fd__sidebar-nav-btn${tab===item.id?' fd__active':''}`}
-              onClick={()=>{setTab(item.id);setSidebarOpen(false);}}>
+              className={`fd__sidebar-nav-btn${tab === item.id ? ' fd__active' : ''}`}
+              onClick={() => { setTab(item.id); setSidebarOpen(false); }}>
               <span className="fd__sidebar-nav-icon">{item.icon}</span>
               <span className="fd__sidebar-nav-label">{item.label}</span>
-              {tab===item.id && <ChevronRight size={12} className="fd__sidebar-nav-chevron"/>}
+              {tab === item.id && <ChevronRight size={12} className="fd__sidebar-nav-chevron" />}
             </button>
           ))}
         </nav>
-
         <div className="fd__sidebar-footer">
-          <button className="fd__sidebar-logout" onClick={()=>navigate('/')}>
-            <LogOut size={14}/><span>Logout</span>
+          <button className="fd__sidebar-logout" onClick={handleLogout}>
+            <LogOut size={14} /><span>Logout</span>
           </button>
         </div>
       </aside>
 
-      {/* ── Main ── */}
       <main ref={mainRef} className="fd__main">
-
-        {/* Topbar */}
         <div className="fd__topbar">
           <div className="fd__topbar-left">
-            <div className="fd__topbar-title">{NAV.find(n=>n.id===tab)?.label}</div>
-            <div className="fd__topbar-date">{new Date().toLocaleDateString('en-IN',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</div>
+            <button className="fd__topbar-hamburger" onClick={() => setSidebarOpen(o => !o)} title="Toggle sidebar">
+              <Menu size={19} />
+            </button>
+            <div>
+              <div className="fd__topbar-title">{NAV.find(n => n.id === tab)?.label}</div>
+              <div className="fd__topbar-date">{dateStr}</div>
+            </div>
           </div>
           <div className="fd__topbar-right">
-            {session && <span className="fd__badge fd__badge-red"><span className="g-pulse-dot"/>LIVE — CS-101 · {fmt(timer)}</span>}
-            <button className="fd__notif-btn">
-              <Bell size={15}/>
-              <div className="fd__notif-badge">3</div>
-            </button>
-            <button className="fd__topbar-hamburger" onClick={()=>setSidebarOpen(o=>!o)}>
-              {sidebarOpen ? <X size={19}/> : <Menu size={19}/>}
-            </button>
+            {activeSession && <span className="fd__badge fd__badge-red"><span className="g-pulse-dot" />LIVE — {fmt(timer)}</span>}
+            <button className="fd__notif-btn"><Bell size={15} /></button>
           </div>
         </div>
 
         <div className="fd__content">
-
-          {/* Stat tiles */}
           <div className="fd__stats-grid">
-            {STATS.map((s,i)=>(
+            {STATS.map((s, i) => (
               <div key={i} className="fd__stat-tile fd__card">
                 <div className="fd__stat-tile-top">
-                  <span style={{color:s.color}}>{s.icon}</span>
-                  <Sparkline data={s.data} color={s.color}/>
+                  <span style={{ color: s.color }}>{s.icon}</span>
+                  <Sparkline data={s.data} color={s.color} />
                 </div>
-                <div className="fd__stat-value" style={{color:s.color}}>
-                  {s.val}<span style={{fontSize:'0.85rem',color:'var(--text-dim)',fontWeight:400}}>{s.sub}</span>
+                <div className="fd__stat-value" style={{ color: s.color }}>
+                  {s.val}<span style={{ fontSize: '0.85rem', color: 'var(--text-dim)', fontWeight: 400 }}>{s.sub}</span>
                 </div>
                 <div className="fd__stat-label">{s.label}</div>
               </div>
@@ -174,73 +237,58 @@ export default function FacultyDashboard() {
           </div>
 
           {/* ── LIVE SESSION ── */}
-          {tab==='live' && (
+          {tab === 'live' && (
             <div className="fd__tab-content">
               <div className="fd__live-grid">
-
-                {/* Controller */}
                 <div className="fd__card">
                   <div className="fd__card-body">
                     <div className="fd__section-label">Session Controller</div>
-
-                    {!session && (
-                      <div style={{marginBottom:18}}>
-                        <label className="fd__field-label">Subject</label>
-                        <select className="fd__select">
-                          {['CS-101 — Data Structures','CS-203 — DBMS','CS-305 — OS','CS-401 — CN'].map(s=>(
-                            <option key={s} style={{background:'var(--deep)'}}>{s}</option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-
-                    <button
-                      className={`fd__btn fd__btn-full${session?' fd__btn-red':' fd__btn-primary'}`}
-                      onClick={()=>{setSession(s=>!s); if(session)setTimer(0);}}>
-                      {session ? <><Square size={13}/>End Session</> : <><Play size={13}/>Start Session</>}
-                    </button>
-
-                    {session && (
-                      <div className="fd__status-grid" style={{marginTop:18}}>
-                        {[
-                          {icon:<Camera size={13}/>, label:'Webcam',  val:'Active',        color:'var(--green)'},
-                          {icon:<Wifi   size={13}/>, label:'Hotspot', val:'47 Devices',    color:'var(--green)'},
-                          {icon:<Shield size={13}/>, label:'2FA Gate',val:'Online',        color:'var(--cyan)'},
-                          {icon:<Clock  size={13}/>, label:'Duration',val:fmt(timer),      color:'var(--cyan)'},
-                        ].map((item,i)=>(
-                          <div key={i} className="fd__status-item">
-                            <span style={{color:item.color}}>{item.icon}</span>
-                            <div>
-                              <div className="fd__status-label">{item.label}</div>
-                              <div className="fd__status-val" style={{color:item.color}}>{item.val}</div>
-                            </div>
-                          </div>
+                    <div style={{ marginBottom: 16 }}>
+                      <label className="fd__field-label">Subject</label>
+                      <select className="fd__select" value={selectedSubject} onChange={e => setSelectedSubject(e.target.value)} disabled={!!activeSession}>
+                        {subjects.map(s => (
+                          <option key={s.id} value={s.id} style={{ background: 'var(--deep)' }}>{s.code} — {s.name}</option>
                         ))}
-                      </div>
-                    )}
+                        {subjects.length === 0 && <option>No subjects assigned</option>}
+                      </select>
+                    </div>
+                    <button
+                      className={`fd__btn fd__btn-full ${activeSession ? 'fd__btn-red' : 'fd__btn-primary'}`}
+                      onClick={activeSession ? endSession : startSession}
+                      disabled={subjects.length === 0}>
+                      {activeSession ? <><Square size={14} />End Session</> : <><Play size={14} />Start Session</>}
+                    </button>
+                    <div className="fd__status-grid">
+                      {[
+                        { label: 'Webcam', val: activeSession ? 'Active' : 'Standby', color: activeSession ? 'var(--green)' : 'var(--text-dim)' },
+                        { label: 'Hotspot', val: activeSession ? 'Broadcasting' : 'Off', color: activeSession ? 'var(--cyan)' : 'var(--text-dim)' },
+                        { label: '2FA Gate', val: activeSession ? 'Open' : 'Closed', color: activeSession ? 'var(--green)' : 'var(--text-dim)' },
+                        { label: 'Duration', val: activeSession ? fmt(timer) : '—', color: 'var(--amber)' },
+                      ].map((item, i) => (
+                        <div key={i} className="fd__status-item">
+                          <div className="fd__status-label">{item.label}</div>
+                          <div className="fd__status-val" style={{ color: item.color }}>{item.val}</div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
-
-                {/* Camera preview */}
                 <div className="fd__card">
                   <div className="fd__card-body">
-                    <div className="fd__section-label">Camera Feed</div>
+                    <div className="fd__section-label">Camera Preview</div>
                     <div className="fd__camera-preview">
-                      {session ? (
+                      {activeSession ? (
                         <>
-                          <div className="g-scan-line"/>
-                          <div className="fd__camera-corner fd__camera-corner-tl"/>
-                          <div className="fd__camera-corner fd__camera-corner-tr"/>
-                          <div>
-                            <Camera size={34} color="var(--cyan)" style={{display:'block',margin:'0 auto 10px'}}/>
-                            <div className="fd__camera-live-text">DETECTING... 3 FACES</div>
-                            <div className="fd__camera-res">1920×1080 · 30fps</div>
-                          </div>
+                          <div className="g-scan-line" />
+                          <div className="fd__camera-corner fd__camera-corner-tl" />
+                          <div className="fd__camera-corner fd__camera-corner-tr" />
+                          <div className="fd__camera-live-text">LIVE FEED</div>
+                          <div className="fd__camera-res">1280×720 · 30fps · HOG</div>
                         </>
                       ) : (
                         <div className="fd__camera-offline">
-                          <Camera size={30} color="var(--text-dim)"/>
-                          <div className="fd__camera-offline-text">Camera Offline<br/><span style={{opacity:.6}}>Start session to activate</span></div>
+                          <Camera size={28} color="var(--text-dim)" />
+                          <div className="fd__camera-offline-text">Session not active</div>
                         </div>
                       )}
                     </div>
@@ -251,40 +299,47 @@ export default function FacultyDashboard() {
           )}
 
           {/* ── ATTENDANCE ── */}
-          {tab==='attendance' && (
+          {tab === 'attendance' && (
             <div className="fd__tab-content">
               <div className="fd__filter-row">
-                <div className="fd__search-wrap" style={{flex:1,maxWidth:320}}>
-                  <Search size={13} className="fd__search-icon"/>
-                  <input className="fd__input fd__search-input" placeholder="Search student or roll..." value={query} onChange={e=>setQuery(e.target.value)}/>
+                <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+                  <Search size={13} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)', pointerEvents: 'none' }} />
+                  <input className="fd__search-input" style={{ paddingLeft: 34, width: '100%' }} placeholder="Search by name or roll…" value={query} onChange={e => setQuery(e.target.value)} />
                 </div>
                 <div className="fd__filter-row-right">
-                  <button className="fd__btn fd__btn-outline" style={{padding:'8px 14px',fontSize:'0.6rem'}}><Filter size={12}/>Filter</button>
-                  <button className="fd__btn fd__btn-primary" style={{padding:'8px 14px',fontSize:'0.6rem'}}><Download size={12}/>Export CSV</button>
+                  <button className="fd__btn fd__btn-outline"><Filter size={13} />Filter</button>
+                  <button className="fd__btn fd__btn-primary" onClick={() => exportReport('daily')}><Download size={13} />Export CSV</button>
                 </div>
               </div>
-
+              {!activeSession && <div style={{ color: 'var(--text-dim)', fontSize: '0.75rem', marginBottom: 12 }}>No active session. Start a session to see live attendance.</div>}
               <div className="fd__card">
                 <div className="fd__table-wrap">
                   <table className="fd__table">
                     <thead>
-                      <tr>{['Roll No','Name','Face','MAC','Conf.','Status','Time','Override'].map(h=>(
+                      <tr>{['Roll No', 'Name', 'Face', 'MAC', 'Conf.', 'Status', 'Time', 'Override'].map(h => (
                         <th key={h}>{h}</th>
                       ))}</tr>
                     </thead>
                     <tbody>
-                      {filtered.map((s,i)=>(
+                      {filtered.map((s) => (
                         <tr key={s.roll}>
                           <td className="fd__table-roll">{s.roll}</td>
                           <td className="fd__table-name">{s.name}</td>
-                          <td>{s.face ? <CheckCircle2 size={15} color="var(--green)"/> : <AlertTriangle size={15} color="var(--red)"/>}</td>
-                          <td>{s.mac  ? <CheckCircle2 size={15} color="var(--green)"/> : <AlertTriangle size={15} color="var(--red)"/>}</td>
-                          <td className="fd__table-mono">{s.conf ? `${s.conf}%` : '—'}</td>
-                          <td><StatusBadge face={s.face} mac={s.mac}/></td>
-                          <td className="fd__table-mono">{s.time}</td>
-                          <td>{!(s.face&&s.mac) && <button className="fd__override-btn" onClick={()=>override(s.roll)}>Override</button>}</td>
+                          <td>{s.face_verified ? <CheckCircle2 size={15} color="var(--green)" /> : <AlertTriangle size={15} color="var(--red)" />}</td>
+                          <td>{s.mac_verified ? <CheckCircle2 size={15} color="var(--green)" /> : <AlertTriangle size={15} color="var(--red)" />}</td>
+                          <td className="fd__table-mono">{s.confidence ? `${s.confidence}%` : '—'}</td>
+                          <td><StatusBadge face={s.face_verified} mac={s.mac_verified} /></td>
+                          <td className="fd__table-mono">{s.marked_at ? new Date(s.marked_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                          <td>
+                            <button
+                              className={`fd__override-btn${s.face_verified && s.mac_verified ? ' fd__override-btn--revert' : ''}`}
+                              onClick={() => override(s.student_id || s.roll, s.face_verified && s.mac_verified)}>
+                              {s.face_verified && s.mac_verified ? 'Revert' : 'Override'}
+                            </button>
+                          </td>
                         </tr>
                       ))}
+                      {filtered.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: 16 }}>No students found.</td></tr>}
                     </tbody>
                   </table>
                 </div>
@@ -293,37 +348,35 @@ export default function FacultyDashboard() {
           )}
 
           {/* ── ANALYTICS ── */}
-          {tab==='analytics' && (
+          {tab === 'analytics' && (
             <div className="fd__tab-content">
-              {/* 30-day trend */}
-              <div className="fd__card" style={{marginBottom:18}}>
+              <div className="fd__card" style={{ marginBottom: 18 }}>
                 <div className="fd__card-body">
                   <div className="fd__section-label">30-Day Attendance Trend</div>
                   <div className="fd__bar-chart-wrap">
-                    {[72,78,68,82,75,80,85,74,79,83,77,81,76,88,84,79,82,86,78,75,80,83,87,76,81,84,79,83,88,85].map((v,i)=>(
+                    {(analytics?.trend_30_days || []).map((v, i) => (
                       <div key={i} className="fd__bar-chart-bar" style={{
-                        height:`${v}%`,
-                        background: v>=80
-                          ? 'linear-gradient(180deg,var(--green),rgba(0,255,157,.3))'
-                          : v>=70
-                          ? 'linear-gradient(180deg,var(--cyan),rgba(0,200,255,.3))'
-                          : 'linear-gradient(180deg,var(--amber),rgba(255,184,0,.3))',
-                      }} title={`Day ${i+1}: ${v}%`}/>
+                        height: `${v}%`,
+                        background: v >= 80 ? 'linear-gradient(180deg,var(--green),rgba(0,255,157,.3))'
+                          : v >= 70 ? 'linear-gradient(180deg,var(--cyan),rgba(0,200,255,.3))'
+                            : 'linear-gradient(180deg,var(--amber),rgba(255,184,0,.3))',
+                      }} title={`${v}%`} />
                     ))}
+                    {(!analytics?.trend_30_days || analytics.trend_30_days.length === 0) && (
+                      <div style={{ color: 'var(--text-dim)', fontSize: '0.72rem', padding: '12px 0' }}>No trend data yet.</div>
+                    )}
                   </div>
                   <div className="fd__chart-footer">
-                    <span className="fd__chart-footer-label">30 days ago</span>
+                    <span className="fd__chart-footer-label">30 sessions ago</span>
                     <span className="fd__chart-footer-label">Today</span>
                   </div>
                 </div>
               </div>
-
               <div className="fd__analytics-grid">
-                {/* Defaulters */}
                 <div className="fd__card">
                   <div className="fd__card-body">
                     <div className="fd__section-label">Defaulters (&lt;75%)</div>
-                    {[{name:'Priya Mehta',roll:'10290',pct:62},{name:'Aditya Kulkarni',roll:'10296',pct:68},{name:'Student X',roll:'10301',pct:71}].map((d,i)=>(
+                    {(analytics?.defaulters || []).map((d, i) => (
                       <div key={i} className="fd__defaulter-item">
                         <div>
                           <div className="fd__defaulter-name">{d.name}</div>
@@ -332,25 +385,26 @@ export default function FacultyDashboard() {
                         <span className="fd__badge fd__badge-red">{d.pct}%</span>
                       </div>
                     ))}
+                    {(!analytics?.defaulters || analytics.defaulters.length === 0) && (
+                      <div style={{ color: 'var(--text-dim)', fontSize: '0.72rem' }}>No defaulters!</div>
+                    )}
                   </div>
                 </div>
-
-                {/* Today's summary */}
                 <div className="fd__card">
                   <div className="fd__card-body">
                     <div className="fd__section-label">Today's Summary</div>
-                    {[
-                      {label:'Present',val:present,total:students.length,color:'var(--green)'},
-                      {label:'Absent', val:absent, total:students.length,color:'var(--red)'},
-                      {label:'Pending',val:pending,total:students.length,color:'var(--amber)'},
-                    ].map((item,i)=>(
+                    {analytics?.today_summary && Object.entries({
+                      Present: { val: analytics.today_summary.present, color: 'var(--green)' },
+                      Absent: { val: analytics.today_summary.absent, color: 'var(--red)' },
+                      Pending: { val: analytics.today_summary.pending, color: 'var(--amber)' },
+                    }).map(([label, item], i) => (
                       <div key={i} className="fd__progress-row">
                         <div className="fd__progress-header">
-                          <span className="fd__progress-label">{item.label}</span>
-                          <span className="fd__progress-val" style={{color:item.color}}>{item.val}/{item.total}</span>
+                          <span className="fd__progress-label">{label}</span>
+                          <span className="fd__progress-val" style={{ color: item.color }}>{item.val}/{analytics.today_summary.total}</span>
                         </div>
                         <div className="fd__progress-track">
-                          <div className="fd__progress-fill" style={{width:`${(item.val/item.total)*100}%`,background:item.color}}/>
+                          <div className="fd__progress-fill" style={{ width: `${analytics.today_summary.total ? (item.val / analytics.today_summary.total) * 100 : 0}%`, background: item.color }} />
                         </div>
                       </div>
                     ))}
@@ -361,23 +415,23 @@ export default function FacultyDashboard() {
           )}
 
           {/* ── REPORTS ── */}
-          {tab==='reports' && (
+          {tab === 'reports' && (
             <div className="fd__tab-content">
               <div className="fd__reports-grid">
                 {[
-                  {title:'Daily Report',       desc:"Full attendance for today's sessions",      icon:<FileText  size={19}/>, color:'var(--cyan)' },
-                  {title:'Weekly Summary',     desc:'Aggregated data for the past 7 days',      icon:<BarChart2 size={19}/>, color:'var(--green)'},
-                  {title:'Defaulter List',     desc:'All students below 75% threshold',         icon:<AlertTriangle size={19}/>,color:'var(--red)'},
-                  {title:'Subject Report',     desc:'Per-subject attendance breakdown',         icon:<TrendingUp size={19}/>,color:'var(--amber)'},
-                  {title:'Semester Report',    desc:'Complete semester attendance log',         icon:<Activity  size={19}/>, color:'var(--cyan)' },
-                  {title:'Audit Log',          desc:'System events and override history',       icon:<Shield    size={19}/>, color:'var(--green)'},
-                ].map((r,i)=>(
+                  { title: 'Daily Report', desc: "Full attendance for today's sessions", icon: <FileText size={19} />, color: 'var(--cyan)', type: 'daily' },
+                  { title: 'Weekly Summary', desc: 'Aggregated data for the past 7 days', icon: <BarChart2 size={19} />, color: 'var(--green)', type: 'weekly' },
+                  { title: 'Defaulter List', desc: 'All students below 75% threshold', icon: <AlertTriangle size={19} />, color: 'var(--red)', type: 'defaulter' },
+                  { title: 'Subject Report', desc: 'Per-subject attendance breakdown', icon: <TrendingUp size={19} />, color: 'var(--amber)', type: 'subject' },
+                  { title: 'Semester Report', desc: 'Complete semester attendance log', icon: <Activity size={19} />, color: 'var(--cyan)', type: 'semester' },
+                  { title: 'Audit Log', desc: 'System events and override history', icon: <Shield size={19} />, color: 'var(--green)', type: 'audit' },
+                ].map((r, i) => (
                   <div key={i} className="fd__card fd__report-card">
-                    <div className="fd__report-icon" style={{color:r.color}}>{r.icon}</div>
+                    <div className="fd__report-icon" style={{ color: r.color }}>{r.icon}</div>
                     <div className="fd__report-title">{r.title}</div>
                     <div className="fd__report-desc">{r.desc}</div>
-                    <button className="fd__btn fd__btn-outline" style={{padding:'7px 14px',fontSize:'0.6rem',width:'100%',justifyContent:'center'}}>
-                      <Download size={11}/>Export
+                    <button className="fd__btn fd__btn-outline fd__btn-full" onClick={() => exportReport(r.type)}>
+                      <Download size={11} />Export
                     </button>
                   </div>
                 ))}
@@ -386,29 +440,28 @@ export default function FacultyDashboard() {
           )}
 
           {/* ── SETTINGS ── */}
-          {tab==='settings' && (
+          {tab === 'settings' && (
             <div className="fd__tab-content">
-              <div className="fd__card" style={{maxWidth:560}}>
+              <div className="fd__card" style={{ maxWidth: 560 }}>
                 <div className="fd__card-body">
                   <div className="fd__section-label">System Configuration</div>
                   {[
-                    {label:'Face Confidence Threshold',val:'70%',    desc:'Minimum match score to mark present'},
-                    {label:'Session Timeout',          val:'90 min', desc:'Auto-end session after inactivity'},
-                    {label:'Defaulter Threshold',      val:'75%',    desc:'Attendance % below which student is flagged'},
-                  ].map((s,i)=>(
-                    <div key={i} style={{marginBottom:22,paddingBottom:22,borderBottom:i<2?'1px solid var(--border)':'none'}}>
-                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:5}}>
-                        <span style={{fontFamily:'var(--font-display)',fontSize:'0.72rem',fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.04em'}}>{s.label}</span>
+                    { label: 'Face Confidence Threshold', val: '70%', desc: 'Minimum match score to mark present' },
+                    { label: 'Session Timeout', val: '90 min', desc: 'Auto-end session after inactivity' },
+                    { label: 'Defaulter Threshold', val: '75%', desc: 'Attendance % below which student is flagged' },
+                  ].map((s, i) => (
+                    <div key={i} style={{ marginBottom: 22, paddingBottom: 22, borderBottom: i < 2 ? '1px solid var(--border)' : 'none' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5, flexWrap: 'wrap', gap: 8 }}>
+                        <span style={{ fontFamily: 'var(--font-display)', fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '0.04em' }}>{s.label}</span>
                         <span className="fd__badge fd__badge-cyan">{s.val}</span>
                       </div>
-                      <div style={{fontFamily:'var(--font-mono)',fontSize:'0.58rem',color:'var(--text-dim)',letterSpacing:'0.05em'}}>{s.desc}</div>
+                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.58rem', color: 'var(--text-dim)', letterSpacing: '0.05em' }}>{s.desc}</div>
                     </div>
                   ))}
                 </div>
               </div>
             </div>
           )}
-
         </div>
       </main>
     </div>

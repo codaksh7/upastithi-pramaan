@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import {
@@ -143,6 +143,20 @@ function TerminalTyper({ lines }) {
 /* ── Main ── */
 export default function LandingPage() {
   const heroRef = useRef(null);
+  const location = useLocation();
+
+  /* scroll to hash section when navigated from another page (e.g. /about → /#team) */
+  useEffect(() => {
+    if (location.hash) {
+      const id = location.hash.replace('#', '');
+      // slight delay to let page render + GSAP settle
+      const t = setTimeout(() => {
+        const el = document.getElementById(id);
+        if (el) el.scrollIntoView({ behavior: 'smooth' });
+      }, 120);
+      return () => clearTimeout(t);
+    }
+  }, [location.hash]);
 
   /* GSAP scroll reveals */
   useEffect(() => {
@@ -171,7 +185,7 @@ export default function LandingPage() {
   /* Hero entrance */
   useEffect(() => {
     const tl = gsap.timeline({ delay: 0.65 });
-    tl.fromTo('.lp__hero-badge',    { opacity:0, y:18 }, { opacity:1, y:0, duration:0.5, ease:'power2.out' })
+    tl.fromTo('.lp__hero-title-1',   { opacity:0, y:18 }, { opacity:1, y:0, duration:0.5, ease:'power2.out' })
       .fromTo('.lp__hero-title-1',  { opacity:0, x:-50 },{ opacity:1, x:0, duration:0.7, ease:'power3.out' }, '-=0.2')
       .fromTo('.lp__hero-title-2',  { opacity:0, x:50 }, { opacity:1, x:0, duration:0.7, ease:'power3.out' }, '-=0.55')
       .fromTo('.lp__hero-title-3',  { opacity:0, x:-50 },{ opacity:1, x:0, duration:0.7, ease:'power3.out' }, '-=0.55')
@@ -228,10 +242,10 @@ export default function LandingPage() {
   ];
 
   const TEAM = [
-    { roll:'10275', name:'Blaise Rodrigues', role:'Group Leader · Backend Architect',  init:'BR', leader:true },
-    { roll:'10268', name:'Devansh Nayak',    role:'Computer Vision Engineer',          init:'DN' },
-    { roll:'10283', name:'Daksh Thakkar',    role:'Network & Security Module',         init:'DT' },
-    { roll:'10287', name:'Aryan Verma',      role:'UI/UX & Frontend Systems',          init:'AV' },
+    { roll:'10275', name:'Blaise Rodrigues', role:'Cybersecurity Analyst', init:'BR' },
+    { roll:'10268', name:'Devansh Nayak',    role:'Cloud Engineer',        init:'DN' },
+    { roll:'10283', name:'Daksh Thakkar',    role:'Full-Stack Developer',  init:'DT' },
+    { roll:'10287', name:'Aryan Verma',      role:'ML Engineer',           init:'AV' },
   ];
 
   return (
@@ -249,13 +263,6 @@ export default function LandingPage() {
 
               {/* Left */}
               <div>
-                <div className="lp__hero-badge">
-                  <span className="lp__badge lp__badge-cyan">
-                    <span className="g-pulse-dot" />
-                    System Active — Fr. CRCE · Comp Dept
-                  </span>
-                </div>
-
                 <h1>
                   <span className="lp__hero-title-line lp__hero-title-1">ATTENDANCE</span>
                   <span className="lp__hero-title-line lp__hero-title-2 g-gradient-text">THAT CANNOT</span>

@@ -4,21 +4,24 @@ import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import './index.css';
 
-import Navbar           from './components/Navbar';
-import LandingPage      from './components/LandingPage';
-import LoginPage        from './components/LoginPage';
+import { AuthProvider } from './context/AuthContext';
+import Navbar from './components/Navbar';
+import LandingPage from './components/LandingPage';
+import LoginPage from './components/LoginPage';
 import StudentDashboard from './components/StudentDashboard';
 import FacultyDashboard from './components/FacultyDashboard';
+import AdminPanel from './components/AdminPanel';
+import About from './components/About';
 
 gsap.registerPlugin(ScrollTrigger);
 
 /* ── Custom cursor ── */
 function CustomCursor() {
-  const dotRef  = useRef(null);
+  const dotRef = useRef(null);
   const ringRef = useRef(null);
-  const mouse   = useRef({ x: 0, y: 0 });
-  const ring    = useRef({ x: 0, y: 0 });
-  const raf     = useRef(null);
+  const mouse = useRef({ x: 0, y: 0 });
+  const ring = useRef({ x: 0, y: 0 });
+  const raf = useRef(null);
 
   useEffect(() => {
     if (window.matchMedia('(hover: none)').matches) return;
@@ -39,8 +42,8 @@ function CustomCursor() {
     raf.current = requestAnimationFrame(tick);
 
     const addHover = () => document.body.classList.add('g-cursor-hover');
-    const rmHover  = () => document.body.classList.remove('g-cursor-hover');
-    const bindAll  = () => {
+    const rmHover = () => document.body.classList.remove('g-cursor-hover');
+    const bindAll = () => {
       document.querySelectorAll('a, button, [data-hover]').forEach(el => {
         el.addEventListener('mouseenter', addHover);
         el.addEventListener('mouseleave', rmHover);
@@ -60,7 +63,7 @@ function CustomCursor() {
 
   return (
     <>
-      <div className="g-cursor-dot"  ref={dotRef}  />
+      <div className="g-cursor-dot" ref={dotRef} />
       <div className="g-cursor-ring" ref={ringRef} />
     </>
   );
@@ -82,21 +85,23 @@ function PageWrapper({ children }) {
 
 /* ── Shell ── */
 function AppShell() {
-  const location    = useLocation();
-  const isDashboard = location.pathname.includes('dashboard');
+  const location = useLocation();
+  const isDashboard = location.pathname.includes('dashboard') || location.pathname.includes('admin');
   return (
     <>
-      <div className="g-noise"     aria-hidden="true" />
+      <div className="g-noise" aria-hidden="true" />
       <div className="g-scanlines" aria-hidden="true" />
-      <div className="g-grid"      aria-hidden="true" />
+      <div className="g-grid" aria-hidden="true" />
       <CustomCursor />
       {!isDashboard && <Navbar />}
       <PageWrapper>
         <Routes>
-          <Route path="/"                  element={<LandingPage />}      />
-          <Route path="/login"             element={<LoginPage />}         />
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/login" element={<LoginPage />} />
           <Route path="/student-dashboard" element={<StudentDashboard />} />
           <Route path="/faculty-dashboard" element={<FacultyDashboard />} />
+          <Route path="/admin" element={<AdminPanel />} />
+          <Route path="/about" element={<About />} />
         </Routes>
       </PageWrapper>
     </>
@@ -104,5 +109,9 @@ function AppShell() {
 }
 
 export default function App() {
-  return <Router><AppShell /></Router>;
+  return (
+    <AuthProvider>
+      <Router><AppShell /></Router>
+    </AuthProvider>
+  );
 }

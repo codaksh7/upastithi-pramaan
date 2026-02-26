@@ -1,14 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { gsap } from 'gsap';
-import { Scan, Shield, Cpu, Users, LogIn, Menu, X } from 'lucide-react';
+import { Scan, Shield, Cpu, Users, LogIn, Menu, X, Info } from 'lucide-react';
 import './Navbar.css';
 
 const NAV_LINKS = [
-  { label: 'System',     href: '#features', icon: <Cpu    size={12} /> },
-  { label: 'Protocol',   href: '#workflow',  icon: <Shield size={12} /> },
-  { label: 'Technology', href: '#tech',      icon: <Scan   size={12} /> },
-  { label: 'Team',       href: '#team',      icon: <Users  size={12} /> },
+  { label: 'System',     hash: 'features', icon: <Cpu    size={12} /> },
+  { label: 'Protocol',   hash: 'workflow',  icon: <Shield size={12} /> },
+  { label: 'Technology', hash: 'tech',      icon: <Scan   size={12} /> },
+  { label: 'Team',       hash: 'team',      icon: <Users  size={12} /> },
+  { label: 'About',      href: '/about',    icon: <Info   size={12} /> },
 ];
 
 export default function Navbar() {
@@ -17,6 +18,7 @@ export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [open,     setOpen]     = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
 
   /* entrance */
   useEffect(() => {
@@ -46,7 +48,7 @@ export default function Navbar() {
     }
   }, [open]);
 
-  /* close on route change */
+  /* close drawer on route change */
   useEffect(() => setOpen(false), [location.pathname]);
 
   /* close on outside click */
@@ -60,6 +62,19 @@ export default function Navbar() {
     document.addEventListener('mousedown', fn);
     return () => document.removeEventListener('mousedown', fn);
   }, [open]);
+
+  /* smart scroll handler:
+     - if already on '/' → scrollIntoView immediately
+     - if on another page → navigate to '/' with hash, LandingPage picks it up */
+  const handleHashClick = (hash, closeDrawer) => {
+    if (closeDrawer) setOpen(false);
+    if (location.pathname === '/') {
+      const el = document.getElementById(hash);
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+    } else {
+      navigate(`/#${hash}`);
+    }
+  };
 
   return (
     <>
@@ -76,14 +91,17 @@ export default function Navbar() {
           </Link>
 
           <div className="nav__links">
-            {NAV_LINKS.map((l, i) => (
-              <a key={i} href={l.href} className="nav__link">{l.icon}{l.label}</a>
-            ))}
+            {NAV_LINKS.map((l, i) =>
+              l.hash
+                ? <button key={i} className="nav__link nav__link-btn" onClick={() => handleHashClick(l.hash, false)}>{l.icon}{l.label}</button>
+                : <Link    key={i} className="nav__link" to={l.href}>{l.icon}{l.label}</Link>
+            )}
           </div>
 
           <div className="nav__ctas">
             <Link to="/login?role=student" className="nav__btn-outline"><Users size={11} />Student</Link>
             <Link to="/login?role=faculty" className="nav__btn-solid"><LogIn  size={11} />Faculty Login</Link>
+            <Link to="/login?role=admin"   className="nav__btn-admin"><Shield size={11} />Admin</Link>
           </div>
 
           <button className="nav__hamburger" onClick={() => setOpen(o => !o)} aria-label="Toggle menu">
@@ -94,14 +112,15 @@ export default function Navbar() {
 
       {open && (
         <div ref={drawerRef} className="nav__drawer">
-          {NAV_LINKS.map((l, i) => (
-            <a key={i} href={l.href} className="nav__drawer-link" onClick={() => setOpen(false)}>
-              {l.icon}{l.label}
-            </a>
-          ))}
+          {NAV_LINKS.map((l, i) =>
+            l.hash
+              ? <button key={i} className="nav__drawer-link nav__link-btn" onClick={() => handleHashClick(l.hash, true)}>{l.icon}{l.label}</button>
+              : <Link    key={i} className="nav__drawer-link" to={l.href} onClick={() => setOpen(false)}>{l.icon}{l.label}</Link>
+          )}
           <div className="nav__drawer-ctas">
             <Link to="/login?role=student" className="nav__btn-outline" onClick={() => setOpen(false)}><Users size={12} />Student</Link>
             <Link to="/login?role=faculty" className="nav__btn-solid"   onClick={() => setOpen(false)}><LogIn  size={12} />Faculty</Link>
+            <Link to="/login?role=admin"   className="nav__btn-admin"   onClick={() => setOpen(false)}><Shield size={12} />Admin</Link>
           </div>
         </div>
       )}

@@ -82,7 +82,7 @@
   width: 100%; padding: 18px 22px;
   background: transparent; border: 1px solid var(--border);
   display: flex; align-items: center; gap: 16px;
-  text-align: left; cursor: none;
+  text-align: left; cursor: pointer;
   clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
   transition: border-color .25s, background .25s;
 }
@@ -102,7 +102,7 @@
 }
 .login__admin-link-wrap { text-align: center; margin-top: 20px; }
 .login__admin-link {
-  background: transparent; border: none; cursor: none;
+  background: transparent; border: none; cursor: pointer;
   font-family: var(--font-mono); font-size: 0.6rem;
   letter-spacing: 0.1em; text-transform: uppercase;
   color: var(--text-dim); transition: color .2s;
@@ -121,7 +121,7 @@
 .login__badge-green { background: var(--green-glow); color: var(--green); border: 1px solid rgba(0,255,157,.3); }
 .login__badge-amber { background: var(--amber-glow); color: var(--amber); border: 1px solid rgba(255,184,0,.3); }
 .login__change-role {
-  background: transparent; border: none; cursor: none;
+  background: transparent; border: none; cursor: pointer;
   font-family: var(--font-mono); font-size: 0.6rem;
   letter-spacing: 0.08em; color: var(--text-dim); transition: color .2s;
 }
@@ -165,14 +165,14 @@
 .login__input-wrap { position: relative; }
 .login__pass-toggle {
   position: absolute; right: 13px; top: 50%; transform: translateY(-50%);
-  background: transparent; border: none; cursor: none;
+  background: transparent; border: none; cursor: pointer;
   color: var(--text-dim); display: flex; align-items: center;
   transition: color .2s;
 }
 .login__pass-toggle:hover { color: var(--cyan); }
 .login__forgot-wrap { text-align: right; margin-top: -6px; }
 .login__forgot {
-  background: transparent; border: none; cursor: none;
+  background: transparent; border: none; cursor: pointer;
   font-family: var(--font-mono); font-size: 0.6rem;
   letter-spacing: 0.08em; color: var(--text-dim); transition: color .2s;
 }
@@ -189,14 +189,16 @@
   display: flex; align-items: center; justify-content: center; gap: 8px;
   font-family: var(--font-display); font-size: 0.7rem;
   font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
-  border: none; cursor: none;
+  border: none; cursor: pointer;
   clip-path: polygon(10px 0%, 100% 0%, calc(100% - 10px) 100%, 0% 100%);
   transition: all .3s var(--ease-out);
 }
-.login__submit-faculty { background: var(--cyan); color: var(--void); box-shadow: 0 0 20px var(--cyan-glow); }
+.login__submit-faculty { background: var(--cyan);  color: var(--void); box-shadow: 0 0 20px var(--cyan-glow); }
 .login__submit-faculty:hover:not(:disabled) { box-shadow: 0 0 40px rgba(0,200,255,.4); transform: translateY(-2px); }
 .login__submit-student { background: var(--green); color: var(--void); box-shadow: 0 0 20px var(--green-glow); }
 .login__submit-student:hover:not(:disabled) { box-shadow: 0 0 40px rgba(0,255,157,.4); transform: translateY(-2px); }
+.login__submit-admin   { background: var(--red);   color: #fff;        box-shadow: 0 0 20px var(--red-glow); }
+.login__submit-admin:hover:not(:disabled)   { box-shadow: 0 0 40px rgba(255,51,102,.4); transform: translateY(-2px); }
 .login__submit:disabled { opacity: 0.65; }
 .login__security-note {
   margin-top: 22px; padding-top: 18px;
