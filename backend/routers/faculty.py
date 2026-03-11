@@ -146,12 +146,13 @@ def override_attendance(
         raise HTTPException(403, "Access denied")
 
     # Check if a record already exists
-    existing = db.table("attendance_records").select("id").eq(
+    res = db.table("attendance_records").select("id").eq(
         "session_id", session_id
-    ).eq("student_id", body.student_id).maybe_single().execute()
+    ).eq("student_id", body.student_id).limit(1).execute()
 
     now = datetime.now(timezone.utc).isoformat()
-    existing_data = safe_data(existing)
+    existing_data = res.data[0] if res.data else None
+    
     if existing_data:
         db.table("attendance_records").update({
             "face_verified": body.present,

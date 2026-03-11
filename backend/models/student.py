@@ -28,6 +28,12 @@ class DeviceChangeRequest(BaseModel):
     reason: Optional[str] = None
 
 
+class MarkAttendanceRequest(BaseModel):
+    session_id: str
+    mac_address: str
+    image_base64: Optional[str] = None
+
+
 class AttendanceSummary(BaseModel):
     subject_code: str
     subject_name: str

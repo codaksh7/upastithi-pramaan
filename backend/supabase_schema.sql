@@ -26,6 +26,7 @@ create table if not exists students (
   email        text,
   department   text default 'Computer Engineering',
   institution  text default 'Fr. Conceicao Rodrigues College of Engineering',
+  face_images  jsonb default '[]'::jsonb,
   created_at   timestamptz default now()
 );
 

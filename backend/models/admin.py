@@ -12,6 +12,7 @@ class EnrollStudent(BaseModel):
     semester: str = "5"
     department: str = "Computer Engineering"
     password: str = "frcrce@123"   # admin can set a custom password; defaults to college default
+    face_images: Optional[List[str]] = None # List of base64 encoded images
 
 
 class UpdateStudent(BaseModel):
