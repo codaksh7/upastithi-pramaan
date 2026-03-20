@@ -109,7 +109,7 @@ export default function StudentDashboard() {
     const interval = setInterval(() => {
       studentApi.getActiveSession()
         .then(setActiveSession)
-        .catch(() => {}); // silent fail on poll
+        .catch(() => { }); // silent fail on poll
     }, 15000);
     return () => clearInterval(interval);
   }, []);
@@ -167,7 +167,7 @@ export default function StudentDashboard() {
 
   const captureAndMark = async () => {
     if (!activeSession || !videoRef.current || !canvasRef.current) return;
-    
+
     // Draw to canvas
     const canvas = canvasRef.current;
     const video = videoRef.current;
@@ -175,7 +175,7 @@ export default function StudentDashboard() {
     canvas.height = video.videoHeight;
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
+
     // Extract base64 and advance to 2FA step
     const base64Image = canvas.toDataURL('image/jpeg');
     setCapturedImage(base64Image);
@@ -286,7 +286,7 @@ export default function StudentDashboard() {
         </div>
       </aside>
 
-      {/* ── Main ── */}
+      {/* Main */}
       <main ref={mainRef} className="sd__main">
         {/* Topbar */}
         <div className="sd__topbar">
@@ -311,7 +311,7 @@ export default function StudentDashboard() {
               <div style={{ padding: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 15 }}>
                 <div>
                   <div style={{ color: 'var(--green)', fontSize: '0.85rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                    <span className="g-pulse-dot" style={{ background: 'var(--green)' }}/> LECTURE IN PROGRESS
+                    <span className="g-pulse-dot" style={{ background: 'var(--green)' }} /> LECTURE IN PROGRESS
                   </div>
                   <div style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-primary)' }}>{activeSession.subject_name} ({activeSession.subject_code})</div>
                   <div style={{ fontSize: '0.85rem', color: 'var(--text-dim)', marginTop: 4 }}>Prof. {activeSession.faculty_name}</div>
