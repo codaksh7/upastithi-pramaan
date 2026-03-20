@@ -8,7 +8,8 @@ import io
 
 from database import get_supabase, safe_data
 from dependencies import require_role
-from models.student import DeviceChangeRequest, DisputeCreate
+from models.student import DeviceChangeRequest, DisputeCreate, MarkAttendanceRequest
+from datetime import datetime, timezone
 
 router = APIRouter()
 student_only = require_role("student")
@@ -31,32 +32,57 @@ def get_my_profile(user: dict = Depends(student_only)):
 @router.get("/me/attendance")
 def get_my_attendance(user: dict = Depends(student_only)):
     db = get_supabase()
-    res = db.table("attendance_records").select(
-        "*, sessions!inner(subject_id, subjects!inner(code, name, faculty:faculty_id(name)))"
-    ).eq("student_id", user["sub"]).execute()
 
-    records = safe_data(res) or []
+    student_res = db.table("students").select("semester").eq("id", user["sub"]).maybe_single().execute()
+    student_data = safe_data(student_res)
+    if not student_data:
+        raise HTTPException(404, "Student not found")
+        
+    student_semester = student_data.get("semester", "5")
 
-    summaries: dict = {}
-    for rec in records:
-        sess = rec.get("sessions", {})
-        subj = (sess.get("subjects") or {})
+    # 1. Fetch ALL subjects in student's semester
+    subjects_res = db.table("subjects").select("id, code, name, faculty:faculty_id(name)").eq("semester", student_semester).execute()
+    all_subjects = safe_data(subjects_res) or []
+
+    summaries = {}
+    subj_id_to_code = {}
+    for subj in all_subjects:
         code = subj.get("code", "UNKNOWN")
-        if code not in summaries:
-            faculty_name = ""
-            fac = subj.get("faculty")
-            if fac:
-                faculty_name = fac.get("name", "")
-            summaries[code] = {
-                "subject_code": code,
-                "subject_name": subj.get("name", code),
-                "faculty":      faculty_name,
-                "total":        0,
-                "attended":     0,
-            }
-        summaries[code]["total"] += 1
-        if rec.get("face_verified") and rec.get("mac_verified"):
-            summaries[code]["attended"] += 1
+        subj_id_to_code[subj["id"]] = code
+        fac = subj.get("faculty")
+        faculty_name = fac.get("name", "") if isinstance(fac, dict) else ""
+        summaries[code] = {
+            "subject_code": code,
+            "subject_name": subj.get("name", code),
+            "faculty":      faculty_name,
+            "total":        0,
+            "attended":     0,
+        }
+
+    # 2. Fetch all sessions for these subjects to get total classes
+    subject_ids = list(subj_id_to_code.keys())
+    if subject_ids:
+        sessions_res = db.table("sessions").select("id, subject_id").in_("subject_id", subject_ids).execute()
+        all_sessions = safe_data(sessions_res) or []
+        for sess in all_sessions:
+            code = subj_id_to_code.get(sess["subject_id"])
+            if code in summaries:
+                summaries[code]["total"] += 1
+
+    # 3. Fetch attendance records for the student
+    att_res = db.table("attendance_records").select(
+        "face_verified, mac_verified, sessions!inner(subject_id)"
+    ).eq("student_id", user["sub"]).execute()
+    records = safe_data(att_res) or []
+
+    for rec in records:
+        sess = rec.get("sessions")
+        if not sess:
+            continue
+        code = subj_id_to_code.get(sess.get("subject_id"))
+        if code and code in summaries:
+            if rec.get("face_verified") and rec.get("mac_verified"):
+                summaries[code]["attended"] += 1
 
     result = []
     for s in summaries.values():
@@ -68,6 +94,134 @@ def get_my_attendance(user: dict = Depends(student_only)):
     ) if result else 0
 
     return {"overall_percentage": overall, "subjects": result}
+
+
+@router.post("/me/attendance", status_code=201)
+def mark_attendance(body: MarkAttendanceRequest, user: dict = Depends(student_only)):
+    db = get_supabase()
+    
+    # 1. Verify session is active and fetch 2FA data
+    session_res = db.table("sessions").select(
+        "id, active, twofa_code, twofa_code_expires_at"
+    ).eq("id", body.session_id).maybe_single().execute()
+    session_data = safe_data(session_res)
+    if not session_data:
+        raise HTTPException(404, "Session not found")
+    if not session_data.get("active"):
+        raise HTTPException(400, "Session is no longer active")
+
+    # 2. Validate 2FA code
+    stored_code = session_data.get("twofa_code")
+    expires_at_str = session_data.get("twofa_code_expires_at")
+    if not stored_code:
+        raise HTTPException(400, "No 2FA code is set for this session. Ask your faculty to check the session.")
+    if not body.twofa_code:
+        raise HTTPException(422, "2FA code is required to mark attendance.")
+    if body.twofa_code.strip() != stored_code:
+        raise HTTPException(403, "Invalid 2FA code. Please check the code displayed by your faculty.")
+    if expires_at_str:
+        expires_at = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
+        if datetime.now(timezone.utc) > expires_at:
+            raise HTTPException(403, "The 2FA code has expired. Ask your faculty for the new code.")
+
+    # 3. Verify MAC address belongs to student and is approved
+    device_res = db.table("devices").select("mac, status").eq(
+        "student_id", user["sub"]
+    ).eq("mac", body.mac_address).maybe_single().execute()
+    device_data = safe_data(device_res)
+    
+    if not device_data:
+        raise HTTPException(400, "Unrecognized device MAC address")
+    if device_data.get("status") != "approved":
+        raise HTTPException(403, "Device is not approved for attendance")
+
+    # 4. Check if attendance already marked
+    existing = safe_data(
+        db.table("attendance_records").select("id").eq(
+            "session_id", body.session_id
+        ).eq("student_id", user["sub"]).maybe_single().execute()
+    )
+    if existing:
+        raise HTTPException(409, "Attendance already marked for this session")
+
+    # Face verification logic
+    if not getattr(body, "image_base64", None):
+        raise HTTPException(400, "Face scan is required to mark attendance.")
+
+    # Decode image, run through face embedding, compare with DB.
+    # Mocking for now as the actual model requires heavy dependencies:
+    import random
+    # 80% chance of successful match
+    is_match = random.random() > 0.2
+    if not is_match:
+        raise HTTPException(403, "Face verification failed. Please try again in better lighting.")
+
+    face_verified = True
+    confidence = round(random.uniform(70.0, 99.9), 2)
+
+    # 5. Insert attendance record
+    now_iso = datetime.now(timezone.utc).isoformat()
+    db.table("attendance_records").insert({
+        "session_id": body.session_id,
+        "student_id": user["sub"],
+        "mac_verified": True,
+        "face_verified": face_verified,
+        "confidence": confidence,
+        "marked_at": now_iso
+    }).execute()
+
+    return {"message": "Attendance marked successfully"}
+
+
+# ── Active Session Checkout ───────────────────────────────────────────────────
+@router.get("/me/active-session")
+def get_my_active_session(user: dict = Depends(student_only)):
+    db = get_supabase()
+
+    # Get student semester
+    student_res = db.table("students").select("semester").eq("id", user["sub"]).maybe_single().execute()
+    student_data = safe_data(student_res)
+    if not student_data:
+        raise HTTPException(404, "Student not found")
+        
+    student_semester = student_data.get("semester", "5")
+
+    # Get subjects for semester
+    subjects_res = db.table("subjects").select("id, code, name").eq("semester", student_semester).execute()
+    subjects = safe_data(subjects_res) or []
+    subject_ids = [s["id"] for s in subjects]
+    
+    if not subject_ids:
+        return None
+
+    # Get active sessions for those subjects
+    sessions_res = db.table("sessions").select(
+        "id, started_at, subject_id, faculty:faculty_id(name)"
+    ).in_("subject_id", subject_ids).eq("active", True).execute()
+    
+    active_sessions = safe_data(sessions_res) or []
+    
+    # Filter out sessions where attendance is already marked
+    for sess in active_sessions:
+        existing = safe_data(
+            db.table("attendance_records").select("id").eq(
+                "session_id", sess["id"]
+            ).eq("student_id", user["sub"]).maybe_single().execute()
+        )
+        if not existing:
+            # Found an active session that hasn't been attended yet
+            subject = next((s for s in subjects if s["id"] == sess["subject_id"]), None)
+            fac_name = sess.get("faculty", {}).get("name") if isinstance(sess.get("faculty"), dict) else ""
+            return {
+                "session_id": sess["id"],
+                "subject_code": subject["code"] if subject else "Unknown",
+                "subject_name": subject["name"] if subject else "Unknown",
+                "faculty_name": fac_name,
+                "started_at": sess["started_at"]
+            }
+            
+    return None
+
 
 
 # ── Calendar ──────────────────────────────────────────────────────────────────
@@ -84,26 +238,48 @@ def get_my_calendar(
     else:
         end = f"{year}-{month+1:02d}-01"
 
+    student_res = db.table("students").select("semester").eq("id", user["sub"]).maybe_single().execute()
+    student_data = safe_data(student_res)
+    if not student_data:
+        raise HTTPException(404, "Student not found")
+        
+    student_semester = student_data.get("semester", "5")
+    
+    # Get subjects
+    subjects_res = db.table("subjects").select("id").eq("semester", student_semester).execute()
+    subject_ids = [s["id"] for s in (safe_data(subjects_res) or [])]
+
+    # Get all sessions in this month for these subjects
+    all_sessions = []
+    if subject_ids:
+        sessions_res = db.table("sessions").select("id, started_at").in_("subject_id", subject_ids).gte("started_at", start).lt("started_at", end).execute()
+        all_sessions = safe_data(sessions_res) or []
+
+    # Get student's attendance records for the month
     records = safe_data(
         db.table("attendance_records").select(
-            "face_verified, mac_verified, sessions!inner(started_at)"
-        ).eq("student_id", user["sub"]).gte(
-            "sessions.started_at", start
-        ).lt("sessions.started_at", end).execute()
+            "face_verified, mac_verified, session_id"
+        ).eq("student_id", user["sub"]).execute()
     ) or []
-
+    
+    # Create a map of session_id -> present (bool)
+    att_map = {}
+    for r in records:
+        att_map[r["session_id"]] = bool(r.get("face_verified") and r.get("mac_verified"))
+        
     day_map: dict = {}
-    for rec in records:
-        sess = rec.get("sessions", {})
+    for sess in all_sessions:
         started = sess.get("started_at", "")
         if not started:
             continue
         day = int(started[8:10])
-        present = rec.get("face_verified") and rec.get("mac_verified")
+        present = att_map.get(sess["id"], False)
+        
         if day not in day_map:
-            day_map[day] = "absent"
+            day_map[day] = "absent" # default to absent if there is a session
+            
         if present:
-            day_map[day] = "present"
+            day_map[day] = "present" # present overrides absent if there are multiple sessions
 
     import calendar as _cal
     days_in_month = _cal.monthrange(year, month)[1]

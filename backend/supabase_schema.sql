@@ -26,6 +26,7 @@ create table if not exists students (
   email        text,
   department   text default 'Computer Engineering',
   institution  text default 'Fr. Conceicao Rodrigues College of Engineering',
+  face_images  jsonb default '[]'::jsonb,
   created_at   timestamptz default now()
 );
 
@@ -52,13 +53,15 @@ create table if not exists subjects (
 
 -- ── 5. SESSIONS ───────────────────────────────────────────────────────────────
 create table if not exists sessions (
-  id           uuid primary key default uuid_generate_v4(),
-  subject_id   uuid not null references subjects(id) on delete cascade,
-  faculty_id   uuid not null references faculty(id) on delete cascade,
-  started_at   timestamptz default now(),
-  ended_at     timestamptz,
-  active       boolean default true,
-  created_at   timestamptz default now()
+  id                      uuid primary key default uuid_generate_v4(),
+  subject_id              uuid not null references subjects(id) on delete cascade,
+  faculty_id              uuid not null references faculty(id) on delete cascade,
+  started_at              timestamptz default now(),
+  ended_at                timestamptz,
+  active                  boolean default true,
+  twofa_code              text,                       -- rotating 6-digit 2FA code
+  twofa_code_expires_at   timestamptz,                -- when the code expires (UTC)
+  created_at              timestamptz default now()
 );
 
 -- ── 6. ATTENDANCE RECORDS ─────────────────────────────────────────────────────

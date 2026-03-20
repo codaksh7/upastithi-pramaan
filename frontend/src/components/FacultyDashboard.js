@@ -5,7 +5,7 @@ import {
   Scan, Play, Square, Users, CheckCircle2, AlertTriangle,
   Download, BarChart2, Settings, LogOut, Camera,
   Eye, ChevronRight, Bell, Search, Activity,
-  Filter, FileText, Shield, TrendingUp, Menu, X
+  Filter, FileText, Shield, TrendingUp, Menu, X, RefreshCw
 } from 'lucide-react';
 import { facultyApi, clearAuth, downloadBlob } from '../api';
 import { useAuth } from '../context/AuthContext';
@@ -55,6 +55,16 @@ export default function FacultyDashboard() {
   const [analytics, setAnalytics] = useState(null);
   const [selectedSubject, setSelectedSubject] = useState('');
 
+  /* ── 2FA state ── */
+  const [twofaCode, setTwofaCode] = useState('');
+  const [twofaExpiry, setTwofaExpiry] = useState(null); // Date object
+  const [twofaCountdown, setTwofaCountdown] = useState(0);
+  const twofaTimerRef = useRef(null);
+
+  /* ── Custom report date range ── */
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+
   const initials = profile ? profile.name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase() : '??';
 
   /* ── Load profile + subjects + active session on mount ── */
@@ -68,7 +78,7 @@ export default function FacultyDashboard() {
       setProfile(prof);
       setSubjects(subj || []);
       if (subj?.length) setSelectedSubject(subj[0].id);
-      if (sess) { setActiveSession(sess); }
+      if (sess) { setActiveSession(sess); applyTwofa(sess); }
     }).catch(err => {
       if (err.message?.includes('401')) handleLogout();
     });
@@ -90,12 +100,48 @@ export default function FacultyDashboard() {
       // Load students for active session
       facultyApi.getSessionStudents(activeSession.id)
         .then(setStudents).catch(console.error);
+      // Apply 2FA code from active session
+      applyTwofa(activeSession);
     } else {
       clearInterval(timerRef.current);
       setTimer(0);
+      setTwofaCode('');
+      setTwofaExpiry(null);
     }
     return () => clearInterval(timerRef.current);
-  }, [activeSession]);
+  }, [activeSession]); // eslint-disable-line
+
+  /* ── 2FA countdown tick ── */
+  useEffect(() => {
+    clearInterval(twofaTimerRef.current);
+    if (!twofaExpiry) return;
+    const tick = () => {
+      const secs = Math.max(0, Math.round((twofaExpiry - Date.now()) / 1000));
+      setTwofaCountdown(secs);
+      if (secs === 0) {
+        // Auto-fetch new code when expired
+        if (activeSession) {
+          facultyApi.getActiveSession().then(sess => {
+            if (sess) { setActiveSession(sess); applyTwofa(sess); }
+          }).catch(() => {});
+        }
+      }
+    };
+    tick();
+    twofaTimerRef.current = setInterval(tick, 1000);
+    return () => clearInterval(twofaTimerRef.current);
+  }, [twofaExpiry]); // eslint-disable-line
+
+  /* ── Poll active session every 30s to pick up rotated codes ── */
+  useEffect(() => {
+    if (!activeSession) return;
+    const poll = setInterval(() => {
+      facultyApi.getActiveSession().then(sess => {
+        if (sess) applyTwofa(sess);
+      }).catch(() => {});
+    }, 30000);
+    return () => clearInterval(poll);
+  }, [activeSession]); // eslint-disable-line
 
   /* ── Analytics when tab opens ── */
   useEffect(() => {
@@ -110,6 +156,24 @@ export default function FacultyDashboard() {
       facultyApi.getSessionStudents(activeSession.id).then(setStudents).catch(console.error);
     }
   }, [tab, activeSession]);
+
+  /* ── 2FA helper ── */
+  const applyTwofa = (sess) => {
+    if (!sess) return;
+    if (sess.twofa_code) setTwofaCode(sess.twofa_code);
+    if (sess.twofa_code_expires_at) {
+      setTwofaExpiry(new Date(sess.twofa_code_expires_at).getTime());
+    }
+  };
+
+  const refreshCode = async () => {
+    if (!activeSession) return;
+    try {
+      const res = await facultyApi.refreshCode(activeSession.id);
+      setTwofaCode(res.twofa_code);
+      setTwofaExpiry(new Date(res.twofa_code_expires_at).getTime());
+    } catch (err) { alert('Refresh failed: ' + err.message); }
+  };
 
   const handleLogout = useCallback(() => { logout(); clearAuth(); navigate('/'); }, [logout, navigate]);
   const fmt = s => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
@@ -140,10 +204,11 @@ export default function FacultyDashboard() {
     } catch (err) { alert(err.message); }
   };
 
-  const exportReport = async (type) => {
+  const exportReport = async (type, fromDate, toDate) => {
     try {
-      const blob = await facultyApi.exportReport(type);
-      downloadBlob(blob, `${type}_report.csv`);
+      const blob = await facultyApi.exportReport(type, fromDate, toDate);
+      const suffix = (fromDate || toDate) ? `_${fromDate || 'start'}_to_${toDate || 'today'}` : '';
+      downloadBlob(blob, `${type}${suffix}_report.csv`);
     } catch (err) { alert('Export failed: ' + err.message); }
   };
 
@@ -258,7 +323,35 @@ export default function FacultyDashboard() {
                       disabled={subjects.length === 0}>
                       {activeSession ? <><Square size={14} />End Session</> : <><Play size={14} />Start Session</>}
                     </button>
-                    <div className="fd__status-grid">
+
+                    {/* ── 2FA Code Display ── */}
+                    {activeSession && twofaCode && (
+                      <div style={{ marginTop: 20, padding: '14px 16px', background: 'rgba(0,255,157,0.06)', border: '1px solid rgba(0,255,157,0.25)', borderRadius: 10 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                          <div className="fd__section-label" style={{ marginBottom: 0 }}>2FA Attendance Code</div>
+                          <button
+                            onClick={refreshCode}
+                            title="Force rotate code"
+                            style={{ background: 'none', border: 'none', color: 'var(--cyan)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.6rem' }}>
+                            <RefreshCw size={11} /> Refresh
+                          </button>
+                        </div>
+                        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '2.4rem', fontWeight: 700, letterSpacing: '0.35em', color: 'var(--green)', textAlign: 'center', padding: '8px 0', textShadow: '0 0 20px rgba(0,255,157,0.4)' }}>
+                          {twofaCode}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 4 }}>
+                          <div style={{ flex: 1, height: 3, borderRadius: 3, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', background: twofaCountdown > 60 ? 'var(--green)' : twofaCountdown > 20 ? 'var(--amber)' : 'var(--red)', width: `${(twofaCountdown / 300) * 100}%`, transition: 'width 1s linear, background 0.5s' }} />
+                          </div>
+                          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: twofaCountdown > 60 ? 'var(--green)' : twofaCountdown > 20 ? 'var(--amber)' : 'var(--red)', minWidth: 38, textAlign: 'right' }}>
+                            {String(Math.floor(twofaCountdown / 60)).padStart(2,'0')}:{String(twofaCountdown % 60).padStart(2,'0')}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: '0.58rem', color: 'var(--text-dim)', textAlign: 'center', marginTop: 6 }}>Share this code with students · rotates every 5 min</div>
+                      </div>
+                    )}
+
+                    <div className="fd__status-grid" style={{ marginTop: 16 }}>
                       {[
                         { label: 'Webcam', val: activeSession ? 'Active' : 'Standby', color: activeSession ? 'var(--green)' : 'var(--text-dim)' },
                         { label: 'Hotspot', val: activeSession ? 'Broadcasting' : 'Off', color: activeSession ? 'var(--cyan)' : 'var(--text-dim)' },
@@ -435,6 +528,47 @@ export default function FacultyDashboard() {
                     </button>
                   </div>
                 ))}
+
+                {/* ── Custom Date-Range Report Card ── */}
+                <div className="fd__card fd__report-card" style={{ border: '1px solid rgba(0,200,255,0.3)', gridColumn: 'span 2' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                    <div className="fd__report-icon" style={{ color: 'var(--cyan)', marginBottom: 0 }}><Download size={19} /></div>
+                    <div>
+                      <div className="fd__report-title" style={{ marginBottom: 0 }}>Custom Date Range</div>
+                      <div className="fd__report-desc">Export attendance for any date range you choose</div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+                    <div style={{ flex: 1, minWidth: 140 }}>
+                      <label className="fd__field-label">From</label>
+                      <input
+                        type="date"
+                        className="fd__select"
+                        value={customFrom}
+                        onChange={e => setCustomFrom(e.target.value)}
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 140 }}>
+                      <label className="fd__field-label">To</label>
+                      <input
+                        type="date"
+                        className="fd__select"
+                        value={customTo}
+                        onChange={e => setCustomTo(e.target.value)}
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                  </div>
+                  <button
+                    className="fd__btn fd__btn-primary fd__btn-full"
+                    onClick={() => {
+                      if (!customFrom && !customTo) { alert('Please select at least one date.'); return; }
+                      exportReport('custom', customFrom || undefined, customTo || undefined);
+                    }}>
+                    <Download size={11} />Export Custom Report
+                  </button>
+                </div>
               </div>
             </div>
           )}

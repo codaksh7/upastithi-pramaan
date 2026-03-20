@@ -82,6 +82,8 @@ export const authApi = {
 export const studentApi = {
     getProfile: () => api.get('/students/me'),
     getAttendance: () => api.get('/students/me/attendance'),
+    getActiveSession: () => api.get('/students/me/active-session'),
+    markAttendance: (body) => api.post('/students/me/attendance', body),
     getCalendar: (month, year) => api.get(`/students/me/calendar?month=${month}&year=${year}`),
     getSubjects: () => api.get('/students/me/subjects'),
     getDevice: () => api.get('/students/me/device'),
@@ -104,7 +106,14 @@ export const facultyApi = {
     overrideAttendance: (id, studentId, present) =>
         api.patch(`/faculty/sessions/${id}/override`, { student_id: studentId, present }),
     getAnalytics: () => api.get('/faculty/analytics'),
-    exportReport: (type) => request('GET', `/faculty/reports/${type}`),
+    exportReport: (type, fromDate, toDate) => {
+        const params = new URLSearchParams();
+        if (fromDate) params.append('from_date', fromDate);
+        if (toDate) params.append('to_date', toDate);
+        const qs = params.toString() ? `?${params.toString()}` : '';
+        return request('GET', `/faculty/reports/${type}${qs}`);
+    },
+    refreshCode: (sessionId) => api.post(`/faculty/sessions/${sessionId}/refresh-code`),
 };
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
