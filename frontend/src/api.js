@@ -34,13 +34,18 @@ export const getRole = () => localStorage.getItem('up_role');
 /** Core fetch wrapper — automatically attaches the Bearer token. */
 async function request(method, path, body = null, opts = {}) {
     const token = getToken();
-    const headers = { 'Content-Type': 'application/json' };
+    const headers = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const isFormData = body instanceof FormData;
+    if (!isFormData && body !== null) {
+        headers['Content-Type'] = 'application/json';
+    }
 
     const res = await fetch(`${BASE_URL}${path}`, {
         method,
         headers,
-        body: body ? JSON.stringify(body) : undefined,
+        body: isFormData ? body : (body ? JSON.stringify(body) : undefined),
         ...opts,
     });
 
@@ -124,11 +129,13 @@ export const adminApi = {
     enrollStudent: (body) => api.post('/admin/students', body),
     updateStudent: (id, body) => api.put(`/admin/students/${id}`, body),
     deleteStudent: (id) => api.delete(`/admin/students/${id}`),
+    massEnrollStudents: (formData) => api.post('/admin/students/upload', formData),
     // Faculty
     getFaculty: () => api.get('/admin/faculty'),
     addFaculty: (body) => api.post('/admin/faculty', body),
     updateFaculty: (id, body) => api.put(`/admin/faculty/${id}`, body),
     deleteFaculty: (id) => api.delete(`/admin/faculty/${id}`),
+    massAddFaculty: (formData) => api.post('/admin/faculty/upload', formData),
     // Devices
     getDevices: () => api.get('/admin/devices'),
     approveDevice: (mac) => api.patch(`/admin/devices/${encodeURIComponent(mac)}/approve`),

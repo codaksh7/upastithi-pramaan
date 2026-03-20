@@ -182,20 +182,33 @@ def refresh_code(session_id: str, user: dict = Depends(faculty_only)):
 @router.get("/sessions/{session_id}/students")
 def get_session_students(session_id: str, user: dict = Depends(faculty_only)):
     db = get_supabase()
-    # Verify session belongs to this faculty
-    sess = db.table("sessions").select("faculty_id").eq("id", session_id).maybe_single().execute()
+    # 1. Verify session belongs to this faculty and get subject
+    sess = db.table("sessions").select(
+        "faculty_id, subject_id, subjects(semester)"
+    ).eq("id", session_id).maybe_single().execute()
     sess_data = safe_data(sess)
-    if not sess_data or sess_data["faculty_id"] != user["sub"]:
+    if not sess_data or sess_data.get("faculty_id") != user["sub"]:
         raise HTTPException(403, "Access denied")
 
-    res = db.table("attendance_records").select(
-        "*, students!inner(roll, name)"
-    ).eq("session_id", session_id).execute()
+    semester = (sess_data.get("subjects") or {}).get("semester", "5")
 
+    # 2. Fetch all students for this semester
+    students_res = db.table("students").select("id, roll, name").eq("semester", semester).execute()
+    all_students = safe_data(students_res) or []
+
+    # 3. Fetch attendance records for this session
+    att_res = db.table("attendance_records").select(
+        "student_id, face_verified, mac_verified, confidence, marked_at"
+    ).eq("session_id", session_id).execute()
+    
+    att_map = {r["student_id"]: r for r in (safe_data(att_res) or [])}
+
+    # 4. Build full roster
     rows = []
-    for rec in (safe_data(res) or []):
-        stu = rec.get("students", {})
+    for stu in all_students:
+        rec = att_map.get(stu["id"], {})
         rows.append({
+            "id":            stu["id"],
             "roll":          stu.get("roll"),
             "name":          stu.get("name"),
             "face_verified": rec.get("face_verified", False),

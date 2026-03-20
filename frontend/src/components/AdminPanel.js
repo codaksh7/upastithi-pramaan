@@ -4,7 +4,7 @@ import { gsap } from 'gsap';
 import {
   Scan, Users, Shield, Database, BarChart2,
   CheckCircle2, AlertTriangle, Activity, LogOut, UserPlus,
-  Trash2, Search, Download, RefreshCw,
+  Trash2, Search, Download, RefreshCw, Upload,
   ChevronRight, Bell, Smartphone, FileText, Menu, X, Loader
 } from 'lucide-react';
 import { adminApi, clearAuth, downloadBlob } from '../api';
@@ -159,6 +159,34 @@ export default function AdminPanel() {
     } catch (err) { setAddFacMsg('Error: ' + err.message); }
   };
 
+  const handleStudentCSV = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      setLoading(true);
+      const res = await adminApi.massEnrollStudents(fd);
+      alert(res.message + (res.errors.length ? "\nErrors:\n" + res.errors.join("\n") : ""));
+      loadData(adminApi.getStudents, setStudents);
+    } catch (err) { alert("Error: " + err.message); }
+    finally { setLoading(false); e.target.value = null; }
+  };
+
+  const handleFacultyCSV = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      setLoading(true);
+      const res = await adminApi.massAddFaculty(fd);
+      alert(res.message + (res.errors.length ? "\nErrors:\n" + res.errors.join("\n") : ""));
+      loadData(adminApi.getFaculty, setFaculty);
+    } catch (err) { alert("Error: " + err.message); }
+    finally { setLoading(false); e.target.value = null; }
+  };
+
   const fStudents = students.filter(s =>
     s.name?.toLowerCase().includes(query.toLowerCase()) || s.roll?.includes(query));
   const fDevices = devices.filter(d =>
@@ -274,7 +302,9 @@ export default function AdminPanel() {
                     <Search size={12} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)', pointerEvents: 'none' }} />
                     <input className="ap__search" style={{ paddingLeft: 30 }} placeholder="Search name/roll…" value={query} onChange={e => setQuery(e.target.value)} />
                   </div>
-                  <button className="ap__btn ap__btn-primary" onClick={() => setTab('enroll')}><UserPlus size={13} />Enroll</button>
+                  <input type="file" id="stuCsv" accept=".csv" style={{ display: 'none' }} onChange={handleStudentCSV} />
+                  <button className="ap__btn ap__btn-outline" onClick={() => document.getElementById('stuCsv').click()}><Upload size={13} />Mass CSV</button>
+                  <button className="ap__btn ap__btn-primary" onClick={() => document.querySelector('.ap__enroll-form')?.scrollIntoView({ behavior: 'smooth' })}><UserPlus size={13} />Enroll</button>
                 </div>
               </div>
               <div className="ap__card">
@@ -350,6 +380,11 @@ export default function AdminPanel() {
             <div className="ap__tab-content">
               <div className="ap__section-head">
                 <div className="ap__section-label">Faculty Management</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input type="file" id="facCsv" accept=".csv" style={{ display: 'none' }} onChange={handleFacultyCSV} />
+                  <button className="ap__btn ap__btn-outline" onClick={() => document.getElementById('facCsv').click()}><Upload size={13} />Mass CSV</button>
+                  <button className="ap__btn ap__btn-primary" onClick={() => document.querySelectorAll('.ap__enroll-form')[1]?.scrollIntoView({ behavior: 'smooth' })}><UserPlus size={13} />Add</button>
+                </div>
               </div>
               <div className="ap__card">
                 <table className="ap__table">

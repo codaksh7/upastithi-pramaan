@@ -21,11 +21,12 @@ GET    /admin/analytics                 — institution-wide analytics
 GET    /admin/face-model                — face model status info
 POST   /admin/face-model/retrain        — trigger retrain (stub)
 """
-from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, UploadFile, File
 from fastapi.responses import StreamingResponse
 import io
 import base64
 import uuid
+import csv
 from datetime import datetime, timezone
 
 from database import get_supabase
@@ -175,6 +176,67 @@ def enroll_student(body: EnrollStudent, user: dict = Depends(admin_only)):
     return student_res.data[0] if student_res.data else {"message": "Student enrolled"}
 
 
+@router.post("/students/upload", status_code=201)
+async def upload_students(file: UploadFile = File(...), user: dict = Depends(admin_only)):
+    db = get_supabase()
+    content = await file.read()
+    try:
+        decoded = content.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(400, "File must be valid UTF-8 CSV")
+
+    reader = csv.DictReader(io.StringIO(decoded))
+    success_count = 0
+    errors = []
+    
+    for row in reader:
+        roll = row.get("roll", "").strip()
+        name = row.get("name", "").strip()
+        if not roll or not name:
+            errors.append(f"Row skipped: missing roll or name: {row}")
+            continue
+            
+        exists = db.table("students").select("id").eq("roll", roll).execute()
+        if exists.data:
+            errors.append(f"Student {roll} already exists")
+            continue
+            
+        password = row.get("password", "")
+        if not password:
+            password = "frcrce@123"
+        
+        try:
+            user_res = db.table("users").insert({
+                "role": "student",
+                "password_hash": hash_password(password),
+            }).execute()
+            user_id = user_res.data[0]["id"]
+            
+            db.table("students").insert({
+                "id":          user_id,
+                "roll":        roll,
+                "name":        name,
+                "division":    row.get("division", "B").strip() or "B",
+                "email":       row.get("email", "").strip(),
+                "semester":    row.get("semester", "5").strip() or "5",
+                "department":  row.get("department", "Computer Engineering").strip() or "Computer Engineering",
+                "institution": "Fr. Conceicao Rodrigues College of Engineering",
+                "face_images": [],
+            }).execute()
+            success_count += 1
+        except Exception as e:
+            errors.append(f"Failed to add {roll}: {str(e)}")
+            
+    db.table("audit_logs").insert({
+        "actor_id": user["sub"],
+        "action":   "MASS_ENROLL_STUDENTS",
+        "details":  f"Enrolled {success_count} students. Errors: {len(errors)}"
+    }).execute()
+    
+    return {"message": f"Successfully enrolled {success_count} students.", "errors": errors}
+
+
+
 @router.put("/students/{student_id}")
 def update_student(student_id: str, body: UpdateStudent, user: dict = Depends(admin_only)):
     db = get_supabase()
@@ -245,6 +307,67 @@ def add_faculty(body: AddFaculty, user: dict = Depends(admin_only)):
         "details":  f"emp_id={body.emp_id} name={body.name}",
     }).execute()
     return fac_res.data[0] if fac_res.data else {"message": "Faculty added"}
+
+
+@router.post("/faculty/upload", status_code=201)
+async def upload_faculty(file: UploadFile = File(...), user: dict = Depends(admin_only)):
+    db = get_supabase()
+    content = await file.read()
+    try:
+        decoded = content.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(400, "File must be valid UTF-8 CSV")
+
+    reader = csv.DictReader(io.StringIO(decoded))
+    success_count = 0
+    errors = []
+    
+    for row in reader:
+        emp_id = row.get("emp_id", "").strip()
+        name = row.get("name", "").strip()
+        if not emp_id or not name:
+            errors.append(f"Row skipped: missing emp_id or name: {row}")
+            continue
+            
+        exists = db.table("faculty").select("id").eq("emp_id", emp_id).execute()
+        if exists.data:
+            errors.append(f"Faculty {emp_id} already exists")
+            continue
+            
+        password = row.get("password", "")
+        if not password:
+            password = "frcrce@123"
+            
+        subjects_raw = row.get("subjects", "")
+        subjects_list = [s.strip() for s in subjects_raw.split(",")] if subjects_raw.strip() else []
+        
+        try:
+            user_res = db.table("users").insert({
+                "role": "faculty",
+                "password_hash": hash_password(password),
+            }).execute()
+            user_id = user_res.data[0]["id"]
+            
+            db.table("faculty").insert({
+                "id":         user_id,
+                "emp_id":     emp_id,
+                "name":       name,
+                "department": row.get("department", "Computer Engineering").strip() or "Computer Engineering",
+                "subjects":   subjects_list,
+                "email":      row.get("email", "").strip(),
+            }).execute()
+            success_count += 1
+        except Exception as e:
+            errors.append(f"Failed to add {emp_id}: {str(e)}")
+            
+    db.table("audit_logs").insert({
+        "actor_id": user["sub"],
+        "action":   "MASS_ADD_FACULTY",
+        "details":  f"Added {success_count} faculty. Errors: {len(errors)}"
+    }).execute()
+    
+    return {"message": f"Successfully added {success_count} faculty.", "errors": errors}
+
 
 
 @router.put("/faculty/{faculty_id}")
