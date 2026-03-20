@@ -100,15 +100,31 @@ def get_my_attendance(user: dict = Depends(student_only)):
 def mark_attendance(body: MarkAttendanceRequest, user: dict = Depends(student_only)):
     db = get_supabase()
     
-    # 1. Verify session is active
-    session_res = db.table("sessions").select("id, active").eq("id", body.session_id).maybe_single().execute()
+    # 1. Verify session is active and fetch 2FA data
+    session_res = db.table("sessions").select(
+        "id, active, twofa_code, twofa_code_expires_at"
+    ).eq("id", body.session_id).maybe_single().execute()
     session_data = safe_data(session_res)
     if not session_data:
         raise HTTPException(404, "Session not found")
     if not session_data.get("active"):
         raise HTTPException(400, "Session is no longer active")
 
-    # 2. Verify MAC address belongs to student and is approved
+    # 2. Validate 2FA code
+    stored_code = session_data.get("twofa_code")
+    expires_at_str = session_data.get("twofa_code_expires_at")
+    if not stored_code:
+        raise HTTPException(400, "No 2FA code is set for this session. Ask your faculty to check the session.")
+    if not body.twofa_code:
+        raise HTTPException(422, "2FA code is required to mark attendance.")
+    if body.twofa_code.strip() != stored_code:
+        raise HTTPException(403, "Invalid 2FA code. Please check the code displayed by your faculty.")
+    if expires_at_str:
+        expires_at = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
+        if datetime.now(timezone.utc) > expires_at:
+            raise HTTPException(403, "The 2FA code has expired. Ask your faculty for the new code.")
+
+    # 3. Verify MAC address belongs to student and is approved
     device_res = db.table("devices").select("mac, status").eq(
         "student_id", user["sub"]
     ).eq("mac", body.mac_address).maybe_single().execute()
@@ -119,7 +135,7 @@ def mark_attendance(body: MarkAttendanceRequest, user: dict = Depends(student_on
     if device_data.get("status") != "approved":
         raise HTTPException(403, "Device is not approved for attendance")
 
-    # 3. Check if attendance already marked
+    # 4. Check if attendance already marked
     existing = safe_data(
         db.table("attendance_records").select("id").eq(
             "session_id", body.session_id
@@ -143,7 +159,7 @@ def mark_attendance(body: MarkAttendanceRequest, user: dict = Depends(student_on
     face_verified = True
     confidence = round(random.uniform(70.0, 99.9), 2)
 
-    # 4. Insert attendance record
+    # 5. Insert attendance record
     now_iso = datetime.now(timezone.utc).isoformat()
     db.table("attendance_records").insert({
         "session_id": body.session_id,

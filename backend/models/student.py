@@ -32,6 +32,7 @@ class MarkAttendanceRequest(BaseModel):
     session_id: str
     mac_address: str
     image_base64: Optional[str] = None
+    twofa_code: Optional[str] = None
 
 
 class AttendanceSummary(BaseModel):

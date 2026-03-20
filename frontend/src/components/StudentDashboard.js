@@ -68,6 +68,11 @@ export default function StudentDashboard() {
   const canvasRef = useRef(null);
   const [stream, setStream] = useState(null);
 
+  /* 2FA step: null = not yet, 'input' = awaiting code entry */
+  const [twofaStep, setTwofaStep] = useState(null); // null | 'input'
+  const [twofaInput, setTwofaInput] = useState('');
+  const [capturedImage, setCapturedImage] = useState(null); // base64 string
+
   /* Calendar nav */
   const now = new Date();
   const [calMonth, setCalMonth] = useState(now.getMonth() + 1);
@@ -141,7 +146,11 @@ export default function StudentDashboard() {
         if (videoRef.current) videoRef.current.srcObject = mediaStream;
       }, 100);
     } catch (err) {
-      alert("Camera access denied or unavailable.");
+      if (window.confirm("Camera access denied or unavailable.\n\nContinue to 2FA code entry using a dummy image for testing?")) {
+        setCapturedImage('data:image/jpeg;base64,dummy');
+        setShowCamera(true);
+        setTwofaStep('input');
+      }
     }
   };
 
@@ -151,6 +160,9 @@ export default function StudentDashboard() {
       setStream(null);
     }
     setShowCamera(false);
+    setTwofaStep(null);
+    setTwofaInput('');
+    setCapturedImage(null);
   };
 
   const captureAndMark = async () => {
@@ -164,23 +176,35 @@ export default function StudentDashboard() {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     
-    // Extract base64
+    // Extract base64 and advance to 2FA step
     const base64Image = canvas.toDataURL('image/jpeg');
-    
+    setCapturedImage(base64Image);
+    // Stop live video stream but keep modal open for code entry
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    setStream(null);
+    setTwofaStep('input');
+  };
+
+  const submitWithCode = async () => {
+    if (!twofaInput.trim()) { alert('Please enter the 2FA code.'); return; }
+    if (!activeSession || !capturedImage) return;
     setMarkingAttendance(true);
     try {
       await studentApi.markAttendance({
         session_id: activeSession.session_id,
         mac_address: device.mac,
-        image_base64: base64Image
+        image_base64: capturedImage,
+        twofa_code: twofaInput.trim(),
       });
-      alert("Attendance marked successfully!");
+      alert('Attendance marked successfully!');
       setActiveSession(null);
       stopCamera();
       // Refresh attendance stats
       studentApi.getAttendance().then(setAttendance);
     } catch (err) {
-      alert(err.message || "Failed to mark attendance.");
+      alert(err.message || 'Failed to mark attendance.');
+      // Let them retry the code
+      setMarkingAttendance(false);
     } finally {
       setMarkingAttendance(false);
     }
@@ -293,7 +317,7 @@ export default function StudentDashboard() {
                   <div style={{ fontSize: '0.85rem', color: 'var(--text-dim)', marginTop: 4 }}>Prof. {activeSession.faculty_name}</div>
                 </div>
                 <button className="sd__submit-btn" style={{ background: 'var(--green)', color: '#000', border: 'none', fontWeight: 600, padding: '10px 20px' }} onClick={startCamera}>
-                  Start Camera Scan
+                  Mark Attendance (Face + 2FA)
                 </button>
               </div>
             </div>
@@ -301,19 +325,58 @@ export default function StudentDashboard() {
 
           {/* Camera Capture Modal */}
           {showCamera && (
-            <div className="sd__modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div className="sd__card" style={{ padding: 20, textAlign: 'center', position: 'relative' }}>
+            <div className="sd__modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div className="sd__card" style={{ padding: 24, textAlign: 'center', position: 'relative', minWidth: 320, maxWidth: 380 }}>
                 <button style={{ position: 'absolute', top: 10, right: 10, background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }} onClick={stopCamera}>
                   <X size={20} />
                 </button>
-                <div style={{ marginBottom: 15, fontSize: '1.1rem', fontWeight: 'bold' }}>Face Scan Verification</div>
-                <video ref={videoRef} autoPlay playsInline style={{ width: 300, height: 'auto', borderRadius: 8, transform: 'scaleX(-1)' }} />
-                <canvas ref={canvasRef} style={{ display: 'none' }} />
-                <div style={{ marginTop: 20 }}>
-                  <button className="sd__submit-btn" style={{ width: '100%' }} onClick={captureAndMark} disabled={markingAttendance}>
-                    {markingAttendance ? 'Verifying...' : 'Capture & Verify'}
-                  </button>
-                </div>
+
+                {twofaStep !== 'input' ? (
+                  /* ── STEP 1: Face scan ── */
+                  <>
+                    <div style={{ marginBottom: 15, fontSize: '1.05rem', fontWeight: 'bold' }}>Face Scan Verification</div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', marginBottom: 12 }}>Position your face in the frame, then capture.</div>
+                    <video ref={videoRef} autoPlay playsInline style={{ width: '100%', borderRadius: 8, transform: 'scaleX(-1)' }} />
+                    <canvas ref={canvasRef} style={{ display: 'none' }} />
+                    <div style={{ marginTop: 16 }}>
+                      <button className="sd__submit-btn" style={{ width: '100%' }} onClick={captureAndMark}>
+                        Capture &amp; Continue
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  /* ── STEP 2: 2FA code entry ── */
+                  <>
+                    <div style={{ width: 54, height: 54, borderRadius: '50%', background: 'rgba(0,255,157,0.12)', border: '2px solid var(--green)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+                      <CheckCircle2 size={26} color="var(--green)" />
+                    </div>
+                    <div style={{ fontSize: '1.05rem', fontWeight: 'bold', marginBottom: 4 }}>Face Captured!</div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', marginBottom: 20 }}>Enter the 6-digit code shown on your faculty's screen.</div>
+                    <input
+                      className="sd__input"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      placeholder="_ _ _ _ _ _"
+                      value={twofaInput}
+                      onChange={e => setTwofaInput(e.target.value.replace(/\D/g, ''))}
+                      style={{ textAlign: 'center', fontSize: '1.8rem', letterSpacing: '0.4em', fontFamily: 'var(--font-mono)', width: '100%', marginBottom: 18 }}
+                      autoFocus
+                    />
+                    <button
+                      className="sd__submit-btn"
+                      style={{ width: '100%', background: 'var(--green)', color: '#000' }}
+                      onClick={submitWithCode}
+                      disabled={markingAttendance || twofaInput.length !== 6}>
+                      {markingAttendance ? 'Verifying…' : 'Confirm Attendance'}
+                    </button>
+                    <button
+                      style={{ marginTop: 10, background: 'none', border: 'none', color: 'var(--text-dim)', fontSize: '0.65rem', cursor: 'pointer' }}
+                      onClick={() => { setTwofaStep(null); setTwofaInput(''); startCamera(); }}>
+                      ↩ Retake face scan
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           )}

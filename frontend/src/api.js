@@ -106,7 +106,14 @@ export const facultyApi = {
     overrideAttendance: (id, studentId, present) =>
         api.patch(`/faculty/sessions/${id}/override`, { student_id: studentId, present }),
     getAnalytics: () => api.get('/faculty/analytics'),
-    exportReport: (type) => request('GET', `/faculty/reports/${type}`),
+    exportReport: (type, fromDate, toDate) => {
+        const params = new URLSearchParams();
+        if (fromDate) params.append('from_date', fromDate);
+        if (toDate) params.append('to_date', toDate);
+        const qs = params.toString() ? `?${params.toString()}` : '';
+        return request('GET', `/faculty/reports/${type}${qs}`);
+    },
+    refreshCode: (sessionId) => api.post(`/faculty/sessions/${sessionId}/refresh-code`),
 };
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
