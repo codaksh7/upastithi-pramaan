@@ -61,6 +61,7 @@ create table if not exists sessions (
   active                  boolean default true,
   twofa_code              text,                       -- rotating 6-digit 2FA code
   twofa_code_expires_at   timestamptz,                -- when the code expires (UTC)
+  hotspot_bssid           text,                       -- faculty hotspot MAC/BSSID for WiFi proximity
   created_at              timestamptz default now()
 );
 
@@ -71,6 +72,7 @@ create table if not exists attendance_records (
   student_id     uuid not null references students(id) on delete cascade,
   face_verified  boolean default false,
   mac_verified   boolean default false,
+  wifi_verified  boolean default false,        -- WiFi hotspot proximity verified
   confidence     numeric(5,2),          -- face recognition confidence %
   marked_at      timestamptz,
   created_at     timestamptz default now(),

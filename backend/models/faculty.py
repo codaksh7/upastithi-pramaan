@@ -14,6 +14,7 @@ class FacultyProfile(BaseModel):
 
 class SessionStart(BaseModel):
     subject_id: str
+    hotspot_bssid: Optional[str] = None
 
 
 class SessionOut(BaseModel):

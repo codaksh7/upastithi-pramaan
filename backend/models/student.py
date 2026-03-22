@@ -33,6 +33,7 @@ class MarkAttendanceRequest(BaseModel):
     mac_address: str
     image_base64: Optional[str] = None
     twofa_code: Optional[str] = None
+    wifi_bssid_found: Optional[str] = None  # BSSID detected by mobile app WiFi scan
 
 
 class AttendanceSummary(BaseModel):

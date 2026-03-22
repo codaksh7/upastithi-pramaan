@@ -124,6 +124,7 @@ def start_session(body: SessionStart, user: dict = Depends(faculty_only)):
         "active":                True,
         "twofa_code":            code,
         "twofa_code_expires_at": expires_at,
+        "hotspot_bssid":         body.hotspot_bssid,
     }).execute()
 
     db.table("audit_logs").insert({

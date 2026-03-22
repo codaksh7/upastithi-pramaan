@@ -100,9 +100,9 @@ def get_my_attendance(user: dict = Depends(student_only)):
 def mark_attendance(body: MarkAttendanceRequest, user: dict = Depends(student_only)):
     db = get_supabase()
     
-    # 1. Verify session is active and fetch 2FA data
+    # 1. Verify session is active and fetch 2FA data + hotspot BSSID
     session_res = db.table("sessions").select(
-        "id, active, twofa_code, twofa_code_expires_at"
+        "id, active, twofa_code, twofa_code_expires_at, hotspot_bssid"
     ).eq("id", body.session_id).maybe_single().execute()
     session_data = safe_data(session_res)
     if not session_data:
@@ -159,13 +159,26 @@ def mark_attendance(body: MarkAttendanceRequest, user: dict = Depends(student_on
     face_verified = True
     confidence = round(random.uniform(70.0, 99.9), 2)
 
-    # 5. Insert attendance record
+    # 5. Verify WiFi BSSID proximity (if hotspot was configured for this session)
+    wifi_verified = False
+    stored_bssid = session_data.get("hotspot_bssid")
+    if stored_bssid and body.wifi_bssid_found:
+        wifi_verified = stored_bssid.upper().strip() == body.wifi_bssid_found.upper().strip()
+    elif not stored_bssid:
+        # No hotspot configured — skip WiFi check (backward compat)
+        wifi_verified = True
+
+    if stored_bssid and not wifi_verified:
+        raise HTTPException(403, "WiFi proximity verification failed. Make sure you are within range of the faculty hotspot.")
+
+    # 6. Insert attendance record
     now_iso = datetime.now(timezone.utc).isoformat()
     db.table("attendance_records").insert({
         "session_id": body.session_id,
         "student_id": user["sub"],
         "mac_verified": True,
         "face_verified": face_verified,
+        "wifi_verified": wifi_verified,
         "confidence": confidence,
         "marked_at": now_iso
     }).execute()

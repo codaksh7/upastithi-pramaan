@@ -54,6 +54,7 @@ export default function FacultyDashboard() {
   const [students, setStudents] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [selectedSubject, setSelectedSubject] = useState('');
+  const [hotspotBssid, setHotspotBssid] = useState('');
 
   /* ── 2FA state ── */
   const [twofaCode, setTwofaCode] = useState('');
@@ -181,7 +182,7 @@ export default function FacultyDashboard() {
   const startSession = async () => {
     if (!selectedSubject) return;
     try {
-      const sess = await facultyApi.startSession(selectedSubject);
+      const sess = await facultyApi.startSession(selectedSubject, hotspotBssid || null);
       setActiveSession(sess);
     } catch (err) { alert(err.message); }
   };
@@ -317,6 +318,18 @@ export default function FacultyDashboard() {
                         {subjects.length === 0 && <option>No subjects assigned</option>}
                       </select>
                     </div>
+                    <div style={{ marginBottom: 16 }}>
+                      <label className="fd__field-label">Hotspot BSSID / MAC Address</label>
+                      <input
+                        className="fd__select"
+                        placeholder="e.g. AA:BB:CC:DD:EE:FF"
+                        value={hotspotBssid}
+                        onChange={e => setHotspotBssid(e.target.value)}
+                        disabled={!!activeSession}
+                        style={{ fontFamily: 'var(--font-mono)', letterSpacing: '0.08em' }}
+                      />
+                      <div style={{ fontSize: '0.52rem', color: 'var(--text-dim)', marginTop: 4 }}>Enter your mobile hotspot MAC address for WiFi proximity verification</div>
+                    </div>
                     <button
                       className={`fd__btn fd__btn-full ${activeSession ? 'fd__btn-red' : 'fd__btn-primary'}`}
                       onClick={activeSession ? endSession : startSession}
@@ -354,7 +367,7 @@ export default function FacultyDashboard() {
                     <div className="fd__status-grid" style={{ marginTop: 16 }}>
                       {[
                         { label: 'Webcam', val: activeSession ? 'Active' : 'Standby', color: activeSession ? 'var(--green)' : 'var(--text-dim)' },
-                        { label: 'Hotspot', val: activeSession ? 'Broadcasting' : 'Off', color: activeSession ? 'var(--cyan)' : 'var(--text-dim)' },
+                        { label: 'Hotspot', val: activeSession ? (activeSession.hotspot_bssid || 'Not Set') : 'Off', color: activeSession ? 'var(--cyan)' : 'var(--text-dim)' },
                         { label: '2FA Gate', val: activeSession ? 'Open' : 'Closed', color: activeSession ? 'var(--green)' : 'var(--text-dim)' },
                         { label: 'Duration', val: activeSession ? fmt(timer) : '—', color: 'var(--amber)' },
                       ].map((item, i) => (
