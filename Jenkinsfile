@@ -6,7 +6,6 @@ pipeline {
         BACKEND_IMAGE     = "${DOCKERHUB_USER}/upastithi-backend"
         FRONTEND_IMAGE    = "${DOCKERHUB_USER}/upastithi-frontend"
         DOCKERHUB_CREDS   = credentials('dockerhub-creds')
-        KUBECONFIG        = '/var/jenkins_home/.kube/config'
     }
 
     stages {
@@ -52,20 +51,34 @@ pipeline {
             }
         }
 
+        stage('Install kubectl') {
+            steps {
+                echo 'Setting up kubectl...'
+                sh """
+                    if [ ! -f /tmp/kubectl ]; then
+                        curl -LO https://dl.k8s.io/release/v1.32.0/bin/linux/amd64/kubectl
+                        chmod +x kubectl
+                        mv kubectl /tmp/kubectl
+                    fi
+                    /tmp/kubectl version --client
+                """
+            }
+        }
+
         stage('Deploy to Kubernetes') {
             steps {
                 echo 'Deploying to Kubernetes...'
-                sh "kubectl set image deployment/backend backend=${BACKEND_IMAGE}:${BUILD_NUMBER} --namespace=default"
-                sh "kubectl set image deployment/frontend frontend=${FRONTEND_IMAGE}:${BUILD_NUMBER} --namespace=default"
-                sh "kubectl rollout status deployment/backend --namespace=default"
-                sh "kubectl rollout status deployment/frontend --namespace=default"
+                sh "/tmp/kubectl set image deployment/backend backend=${BACKEND_IMAGE}:${BUILD_NUMBER} --namespace=default"
+                sh "/tmp/kubectl set image deployment/frontend frontend=${FRONTEND_IMAGE}:${BUILD_NUMBER} --namespace=default"
+                sh "/tmp/kubectl rollout status deployment/backend --namespace=default"
+                sh "/tmp/kubectl rollout status deployment/frontend --namespace=default"
             }
         }
     }
 
     post {
         success {
-            echo 'Pipeline completed successfully! App is deployed.'
+            echo 'Pipeline completed! App is deployed to Kubernetes.'
         }
         failure {
             echo 'Pipeline failed. Check the logs above.'
