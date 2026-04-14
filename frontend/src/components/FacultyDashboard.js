@@ -545,6 +545,7 @@ export default function FacultyDashboard() {
                         type="date"
                         className="fd__select"
                         value={customFrom}
+                        max={new Date().toISOString().split("T")[0]}
                         onChange={e => setCustomFrom(e.target.value)}
                         style={{ width: '100%' }}
                       />
@@ -555,6 +556,7 @@ export default function FacultyDashboard() {
                         type="date"
                         className="fd__select"
                         value={customTo}
+                        max={new Date().toISOString().split("T")[0]}
                         onChange={e => setCustomTo(e.target.value)}
                         style={{ width: '100%' }}
                       />

@@ -665,6 +665,7 @@ export default function StudentDashboard() {
                     <div>
                       <label className="sd__field-label">Date</label>
                       <input type="date" className="sd__input"
+                        max={new Date().toISOString().split("T")[0]}
                         value={disputeForm.date}
                         onChange={e => setDisputeForm(f => ({ ...f, date: e.target.value }))} />
                     </div>

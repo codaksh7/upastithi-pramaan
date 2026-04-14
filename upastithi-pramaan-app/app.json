@@ -1,0 +1,63 @@
+{
+  "expo": {
+    "name": "Upastithi-Pramaan",
+    "slug": "upastithi-pramaan",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#020408"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.frcrce.upastithi",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Camera required for face recognition attendance.",
+        "NSLocalNetworkUsageDescription": "Network access required for device verification."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#020408"
+      },
+      "package": "com.frcrce.upastithi",
+      "permissions": [
+        "CAMERA",
+        "ACCESS_NETWORK_STATE",
+        "ACCESS_WIFI_STATE",
+        "INTERNET",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Upastithi-Pramaan to use camera for face recognition."
+        }
+      ],
+      "expo-secure-store",
+      "expo-document-picker",
+      "@react-native-community/datetimepicker"
+    ],
+    "scheme": "upastithi",
+    "extra": {
+      "eas": {
+        "projectId": "4b809cb9-0014-4911-89bb-019ee5b80575"
+      }
+    }
+  }
+}
