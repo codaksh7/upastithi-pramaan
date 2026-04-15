@@ -12,7 +12,7 @@ import { GlowCard, Badge, CyberButton, PulseDot } from '../../components/UI';
 import { Colors, Spacing } from '../../utils/theme';
 
 const { width: W, height: H } = Dimensions.get('window');
-const STEPS = ['WIFI_CHECK','VERIFY_2FA','SCAN_FACE','SUBMIT'];
+const STEPS = ['SCAN_FACE','WIFI_CHECK','VERIFY_2FA','SUBMIT'];
 
 export default function MarkAttendanceScreen({ route, navigation }) {
   const session = route?.params?.session;
@@ -31,12 +31,12 @@ export default function MarkAttendanceScreen({ route, navigation }) {
   const [wifiVerified,   setWifiVerified]   = useState(false);
   const [scannedNetworks,setScannedNetworks]= useState([]);
 
-  // Auto-start Wi-Fi check when screen opens
+  // Auto-start Wi-Fi check when step reaches WIFI_CHECK
   useEffect(() => {
-    if (step === 'WIFI_CHECK' && session?.hotspot_ssid) {
+    if (step === 'WIFI_CHECK' && session?.hotspot_ssid && !wifiVerified && !wifiScanning) {
       scanWifi();
     }
-  }, []);
+  }, [step]);
 
   const requestLocationPermission = async () => {
     if (Platform.OS === 'android') {
@@ -113,7 +113,7 @@ export default function MarkAttendanceScreen({ route, navigation }) {
     setError('');
     try {
       await studentApi.verify2FA({ session_id: session.session_id, twofa_code: twoFaCode.trim() });
-      setStep('SCAN_FACE');
+      setStep('SUBMIT');
     } catch(e) {
       const msg = e.message || 'Verification failed';
       // Provide clearer error messages for common cases
@@ -132,7 +132,7 @@ export default function MarkAttendanceScreen({ route, navigation }) {
     try {
       const photo = await cameraRef.current.takePictureAsync({ base64:true, quality:0.5, skipProcessing:true });
       setCapturedImg(photo.base64);
-      setStep('SUBMIT');
+      setStep('WIFI_CHECK');
     } catch(e){ setError('Camera capture failed. Try again.'); }
     finally { setLoading(false); }
   };
@@ -191,7 +191,7 @@ export default function MarkAttendanceScreen({ route, navigation }) {
 
       {/* Step indicators */}
       <View style={s.stepRow}>
-        {[{key:'WIFI_CHECK',label:'WIFI',n:1},{key:'VERIFY_2FA',label:'2FA',n:2},{key:'SCAN_FACE',label:'FACE',n:3},{key:'SUBMIT',label:'SUBMIT',n:4}].map((st,i)=>{
+        {[{key:'SCAN_FACE',label:'FACE',n:1},{key:'WIFI_CHECK',label:'WIFI',n:2},{key:'VERIFY_2FA',label:'2FA',n:3},{key:'SUBMIT',label:'SUBMIT',n:4}].map((st,i)=>{
           const done=STEPS.indexOf(step)>i; const cur=step===st.key;
           return (
             <React.Fragment key={st.key}>
@@ -330,9 +330,9 @@ export default function MarkAttendanceScreen({ route, navigation }) {
             <GlowCard color="cyan" style={{marginBottom:16}}>
               <Text style={s.checkTitle}>VERIFICATION SUMMARY</Text>
               {[
+                {label:'Face Image',   done:!!capturedImg,  val:capturedImg?'Captured ✓':'Not captured'},
                 {label:'Wi-Fi Range',  done:wifiVerified,   val:wifiVerified ? `${session?.hotspot_ssid || 'Skipped'} ✓` : 'Not verified'},
                 {label:'2FA Code',     done:true,           val:`${twoFaCode.slice(0,3)} ${twoFaCode.slice(3)}`},
-                {label:'Face Image',   done:!!capturedImg,  val:capturedImg?'Captured ✓':'Not captured'},
                 {label:'Device MAC',   done:!!MAC,          val:MAC},
                 {label:'Session ID',   done:true,           val:(session?.session_id||'').slice(0,8)+'...'},
               ].map((c,i)=>(

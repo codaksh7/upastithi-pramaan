@@ -57,12 +57,39 @@ export default function FacultySessionScreen() {
 
   useEffect(()=>{ fetchData(); },[fetchData]);
 
-  useEffect(()=>{
-    if(activeSession&&countdown>0){
-      timerRef.current=setInterval(()=>setCountdown(c=>{ if(c<=1){clearInterval(timerRef.current);return 0;} return c-1; }),1000);
-    }
-    return ()=>clearInterval(timerRef.current);
-  },[activeSession,countdown]);
+  /* ── 2FA countdown with auto-refresh mechanism ── */
+  useEffect(() => {
+    clearInterval(timerRef.current);
+    if (!activeSession || !activeSession.twofa_code_expires_at) return;
+
+    const expiryTime = new Date(activeSession.twofa_code_expires_at).getTime();
+
+    const tick = () => {
+      const secsLeft = Math.max(0, Math.round((expiryTime - Date.now()) / 1000));
+      setCountdown(secsLeft);
+      if (secsLeft === 0) {
+        facultyApi.getActiveSession().then(sess => {
+          if (sess) setActiveSession(sess);
+        }).catch(() => {});
+      }
+    };
+    
+    tick();
+    timerRef.current = setInterval(tick, 1000);
+
+    return () => clearInterval(timerRef.current);
+  }, [activeSession]);
+
+  /* ── Auto-poll active session every 30s to keep in sync with web/backend ── */
+  useEffect(() => {
+    if (!activeSession) return;
+    const poll = setInterval(() => {
+      facultyApi.getActiveSession().then(sess => {
+        if (sess) setActiveSession(sess);
+      }).catch(() => {});
+    }, 30000);
+    return () => clearInterval(poll);
+  }, [activeSession]);
 
   const startSession = async () => {
     if(!selectedSub){Alert.alert('Error','Select a subject first.');return;}
