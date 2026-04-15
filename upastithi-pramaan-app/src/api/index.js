@@ -79,6 +79,7 @@ export const studentApi = {
   getProfile:       () => api.get('/students/me'),
   getAttendance:    () => api.get('/students/me/attendance'),
   getActiveSession: () => api.get('/students/me/active-session'),
+  verify2FA:        (body) => api.post('/students/me/verify-2fa', body),
   markAttendance:   (body) => api.post('/students/me/attendance', body),
   getCalendar:      (month, year) => api.get(`/students/me/calendar?month=${month}&year=${year}`),
   getSubjects:      () => api.get('/students/me/subjects'),
@@ -100,7 +101,11 @@ export const facultyApi = {
   getProfile:         () => api.get('/faculty/me'),
   getSubjects:        () => api.get('/faculty/subjects'),
   getActiveSession:   () => api.get('/faculty/sessions/active'),
-  startSession:       (subjectId) => api.post('/faculty/sessions/start', { subject_id: subjectId }),
+  startSession:       (subjectId, hotspotSsid) => {
+    const body = { subject_id: subjectId };
+    if (hotspotSsid) body.hotspot_ssid = hotspotSsid;
+    return api.post('/faculty/sessions/start', body);
+  },
   endSession:         (id) => api.post(`/faculty/sessions/${id}/end`),
   getSessionStudents: (id) => api.get(`/faculty/sessions/${id}/students`),
   overrideAttendance: (id, studentId, present) =>

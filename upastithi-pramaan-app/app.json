@@ -32,6 +32,9 @@
         "CAMERA",
         "ACCESS_NETWORK_STATE",
         "ACCESS_WIFI_STATE",
+        "CHANGE_WIFI_STATE",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
         "INTERNET",
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE",
@@ -51,12 +54,13 @@
       ],
       "expo-secure-store",
       "expo-document-picker",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "./plugins/withWifiReborn"
     ],
     "scheme": "upastithi",
     "extra": {
       "eas": {
-        "projectId": "4b809cb9-0014-4911-89bb-019ee5b80575"
+        "projectId": "3cdd58f1-ede0-4b07-9c94-8c4b0a1f9842"
       }
     }
   }

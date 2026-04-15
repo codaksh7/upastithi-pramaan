@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, Alert, Switch, Animated,
+  RefreshControl, Alert, Switch, Animated, TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,6 +23,7 @@ export default function FacultySessionScreen() {
   const [starting,      setStarting]      = useState(false);
   const [ending,        setEnding]        = useState(false);
   const [selectedSub,   setSelectedSub]   = useState(null);
+  const [hotspotSsid,   setHotspotSsid]   = useState('');
   const [countdown,     setCountdown]     = useState(0);
   const [refreshingCode,setRefreshingCode]= useState(false);
   const timerRef = useRef(null);
@@ -65,8 +66,9 @@ export default function FacultySessionScreen() {
 
   const startSession = async () => {
     if(!selectedSub){Alert.alert('Error','Select a subject first.');return;}
+    if(!hotspotSsid.trim()){Alert.alert('Error','Enter your Wi-Fi Hotspot name for proximity verification.');return;}
     setStarting(true);
-    try { await facultyApi.startSession(selectedSub.id); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); await fetchData(); }
+    try { await facultyApi.startSession(selectedSub.id, hotspotSsid.trim()); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); await fetchData(); }
     catch(e){Alert.alert('Error',e.message);}
     finally{setStarting(false);}
   };
@@ -142,6 +144,12 @@ export default function FacultySessionScreen() {
               <Divider/>
               <Text style={s.activeSubj}>{activeSession.subjects?.code} — {activeSession.subjects?.name}</Text>
               <Text style={s.activeMeta}>Started: {new Date(activeSession.started_at).toLocaleTimeString()}</Text>
+              {activeSession.hotspot_ssid&&(
+                <View style={s.ssidBadge}>
+                  <Ionicons name="wifi" size={12} color={Colors.cyan}/>
+                  <Text style={s.ssidBadgeText}>HOTSPOT: {activeSession.hotspot_ssid}</Text>
+                </View>
+              )}
 
               {/* 2FA Code */}
               <GlowCard color="cyan" style={s.codeCard}>
@@ -181,7 +189,21 @@ export default function FacultySessionScreen() {
                 </TouchableOpacity>
               ))
             }
-            <CyberButton label="Start Session" color="green" onPress={startSession} loading={starting} disabled={!selectedSub} style={{marginTop:14}}/>
+            <SectionLabel label="Wi-Fi Hotspot Name" style={{marginTop:18}}/>
+            <View style={s.ssidInputWrap}>
+              <Ionicons name="wifi" size={16} color={Colors.cyan}/>
+              <TextInput
+                style={s.ssidInput}
+                placeholder="e.g. Prof_Kanthe_Hotspot"
+                placeholderTextColor={Colors.textDim}
+                value={hotspotSsid}
+                onChangeText={setHotspotSsid}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+            <Text style={s.ssidHint}>Enter exact hotspot/Wi-Fi name students must be in range of to mark attendance.</Text>
+            <CyberButton label="Start Session" color="green" onPress={startSession} loading={starting} disabled={!selectedSub||!hotspotSsid.trim()} style={{marginTop:14}}/>
           </GlowCard>
         )}
 
@@ -252,6 +274,11 @@ const s = StyleSheet.create({
   subBtnActive:{borderColor:Colors.cyan,backgroundColor:Colors.cyanGlow},
   subBtnCode:{fontFamily:'monospace',fontSize:13,fontWeight:'700',color:Colors.textPrimary},
   subBtnName:{fontFamily:'monospace',fontSize:10,color:Colors.textMuted,marginTop:2},
+  ssidInputWrap:{flexDirection:'row',alignItems:'center',gap:10,borderWidth:1,borderColor:Colors.cyanBorder,borderRadius:3,backgroundColor:Colors.cardBg,paddingHorizontal:12,paddingVertical:4,marginBottom:4},
+  ssidInput: {flex:1,fontFamily:'monospace',fontSize:13,color:Colors.textPrimary,paddingVertical:10},
+  ssidHint:  {fontFamily:'monospace',fontSize:8,color:Colors.textDim,marginTop:4,lineHeight:13,letterSpacing:0.3},
+  ssidBadge: {flexDirection:'row',alignItems:'center',gap:5,marginTop:6,backgroundColor:Colors.cyanGlow,borderWidth:1,borderColor:Colors.cyanBorder,borderRadius:3,paddingHorizontal:9,paddingVertical:4,alignSelf:'flex-start'},
+  ssidBadgeText:{fontFamily:'monospace',fontSize:9,color:Colors.cyan,letterSpacing:1},
   stuRow:    {marginBottom:8,padding:11,flexDirection:'row',alignItems:'center',justifyContent:'space-between'},
   stuLeft:   {flexDirection:'row',alignItems:'center',gap:11,flex:1},
   stuAvatar: {width:38,height:38,borderRadius:19,borderWidth:1,alignItems:'center',justifyContent:'center'},

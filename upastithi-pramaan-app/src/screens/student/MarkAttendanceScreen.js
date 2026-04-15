@@ -1,17 +1,18 @@
 // src/screens/student/MarkAttendanceScreen.js
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Dimensions, Platform, PermissionsAndroid, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import WifiManager from 'react-native-wifi-reborn';
 import { studentApi } from '../../api';
 import Background from '../../components/Background';
 import { GlowCard, Badge, CyberButton, PulseDot } from '../../components/UI';
 import { Colors, Spacing } from '../../utils/theme';
 
 const { width: W, height: H } = Dimensions.get('window');
-const STEPS = ['VERIFY_2FA','SCAN_FACE','SUBMIT'];
+const STEPS = ['WIFI_CHECK','VERIFY_2FA','SCAN_FACE','SUBMIT'];
 
 export default function MarkAttendanceScreen({ route, navigation }) {
   const session = route?.params?.session;
@@ -25,15 +26,104 @@ export default function MarkAttendanceScreen({ route, navigation }) {
   const cameraRef = useRef(null);
   const MAC = 'AA:BB:CC:DD:EE:FF'; // RN: actual MAC needs native module
 
+  // Wi-Fi scan state
+  const [wifiScanning,   setWifiScanning]   = useState(false);
+  const [wifiVerified,   setWifiVerified]   = useState(false);
+  const [scannedNetworks,setScannedNetworks]= useState([]);
+
+  // Auto-start Wi-Fi check when screen opens
+  useEffect(() => {
+    if (step === 'WIFI_CHECK' && session?.hotspot_ssid) {
+      scanWifi();
+    }
+  }, []);
+
+  const requestLocationPermission = async () => {
+    if (Platform.OS === 'android') {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+        {
+          title: 'Location Permission Required',
+          message: 'Upastithi needs location access to scan nearby Wi-Fi networks for proximity verification.',
+          buttonPositive: 'Allow',
+          buttonNegative: 'Deny',
+        }
+      );
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    }
+    return true;
+  };
+
+  const scanWifi = async () => {
+    setWifiScanning(true);
+    setError('');
+    try {
+      // Request location permission (required for Wi-Fi scan on Android)
+      const hasPermission = await requestLocationPermission();
+      if (!hasPermission) {
+        setError('Location permission is required to verify classroom proximity. Please enable it in Settings.');
+        setWifiScanning(false);
+        return;
+      }
+
+      // Perform Wi-Fi scan
+      const networks = await WifiManager.reScanAndLoadWifiList();
+      setScannedNetworks(networks || []);
+
+      // Check if faculty hotspot is in range
+      const targetSsid = session?.hotspot_ssid;
+      if (!targetSsid) {
+        // No SSID configured for this session — skip check
+        setWifiVerified(true);
+        setStep('VERIFY_2FA');
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        return;
+      }
+
+      const found = (networks || []).some(
+        (n) => n.SSID?.toLowerCase() === targetSsid.toLowerCase()
+      );
+
+      if (found) {
+        setWifiVerified(true);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        // Auto-advance to 2FA step after a brief delay
+        setTimeout(() => setStep('VERIFY_2FA'), 800);
+      } else {
+        setError(`Faculty hotspot "${targetSsid}" not detected. Make sure you are in the classroom and the faculty's hotspot is turned ON.`);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
+    } catch (e) {
+      console.warn('Wi-Fi scan error:', e);
+      setError('Wi-Fi scan failed. Ensure Wi-Fi and Location are enabled on your device.');
+    } finally {
+      setWifiScanning(false);
+    }
+  };
+
   const handleKey = (k) => {
     Haptics.selectionAsync();
     if (k==='DEL') { setTwoFaCode(c=>c.slice(0,-1)); return; }
     if (twoFaCode.length<6) setTwoFaCode(c=>c+k);
   };
 
-  const proceed2FA = () => {
+  const proceed2FA = async () => {
     if (twoFaCode.length!==6){ setError('Enter the 6-digit code shown by your faculty.'); return; }
-    setError(''); setStep('SCAN_FACE');
+    setLoading(true);
+    setError('');
+    try {
+      await studentApi.verify2FA({ session_id: session.session_id, twofa_code: twoFaCode.trim() });
+      setStep('SCAN_FACE');
+    } catch(e) {
+      const msg = e.message || 'Verification failed';
+      // Provide clearer error messages for common cases
+      if (msg.includes('not active') || msg.includes('not found')) {
+        setError('Session may have ended. Go back and try again.');
+      } else {
+        setError(msg);
+      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally { setLoading(false); }
   };
 
   const captureAndContinue = async () => {
@@ -50,7 +140,7 @@ export default function MarkAttendanceScreen({ route, navigation }) {
   const submitAttendance = async () => {
     setLoading(true); setError('');
     try {
-      await studentApi.markAttendance({ session_id:session.session_id, mac_address:MAC, twofa_code:twoFaCode, image_base64:capturedImg });
+      await studentApi.markAttendance({ session_id:session.session_id, mac_address:MAC, twofa_code:twoFaCode, image_base64:capturedImg, wifi_verified:wifiVerified });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setSuccess(true);
     } catch(e){
@@ -69,7 +159,7 @@ export default function MarkAttendanceScreen({ route, navigation }) {
         <GlowCard color="green" style={{marginTop:28,width:'100%'}}>
           <Text style={s.successDetail}>Session: {session?.subject_code}</Text>
           <Text style={s.successDetail}>Subject: {session?.subject_name}</Text>
-          <Text style={s.successDetail}>Verification: 2FA ✓ + Face ✓ + MAC ✓</Text>
+          <Text style={s.successDetail}>Verification: Wi-Fi ✓ + 2FA ✓ + Face ✓ + MAC ✓</Text>
         </GlowCard>
         <CyberButton label="Back to Dashboard" color="green" onPress={()=>navigation.goBack()} style={{marginTop:22,width:'100%'}}/>
       </View>
@@ -101,7 +191,7 @@ export default function MarkAttendanceScreen({ route, navigation }) {
 
       {/* Step indicators */}
       <View style={s.stepRow}>
-        {[{key:'VERIFY_2FA',label:'2FA',n:1},{key:'SCAN_FACE',label:'FACE',n:2},{key:'SUBMIT',label:'SUBMIT',n:3}].map((st,i)=>{
+        {[{key:'WIFI_CHECK',label:'WIFI',n:1},{key:'VERIFY_2FA',label:'2FA',n:2},{key:'SCAN_FACE',label:'FACE',n:3},{key:'SUBMIT',label:'SUBMIT',n:4}].map((st,i)=>{
           const done=STEPS.indexOf(step)>i; const cur=step===st.key;
           return (
             <React.Fragment key={st.key}>
@@ -111,13 +201,72 @@ export default function MarkAttendanceScreen({ route, navigation }) {
                 </View>
                 <Text style={[s.stepL,cur&&{color:Colors.cyan},done&&{color:Colors.green}]}>{st.label}</Text>
               </View>
-              {i<2&&<View style={[s.stepLine,done&&{backgroundColor:Colors.green}]}/>}
+              {i<3&&<View style={[s.stepLine,done&&{backgroundColor:Colors.green}]}/>}
             </React.Fragment>
           );
         })}
       </View>
 
       <ScrollView style={{flex:1}} contentContainerStyle={s.content}>
+        {/* ── Step 0: Wi-Fi Proximity Check ── */}
+        {step==='WIFI_CHECK'&&(
+          <View>
+            <Text style={s.stepTitle}>WI-FI PROXIMITY CHECK</Text>
+            <Text style={s.stepDesc}>
+              {session?.hotspot_ssid
+                ? `Scanning for faculty hotspot "${session.hotspot_ssid}" to verify you are in the classroom.`
+                : 'No hotspot configured for this session. Skipping proximity check...'}
+            </Text>
+
+            <GlowCard color="cyan" style={s.wifiCard}>
+              <View style={s.wifiIconWrap}>
+                {wifiScanning ? (
+                  <ActivityIndicator size="large" color={Colors.cyan}/>
+                ) : wifiVerified ? (
+                  <Ionicons name="checkmark-circle" size={56} color={Colors.green}/>
+                ) : (
+                  <Ionicons name="wifi" size={56} color={error ? Colors.red : Colors.cyan}/>
+                )}
+              </View>
+
+              <Text style={[s.wifiStatus, wifiVerified && {color: Colors.green}, error && {color: Colors.red}]}>
+                {wifiScanning ? 'SCANNING NEARBY NETWORKS...' : wifiVerified ? 'IN RANGE — VERIFIED ✓' : error ? 'NOT IN RANGE' : 'READY TO SCAN'}
+              </Text>
+
+              {session?.hotspot_ssid && (
+                <View style={s.ssidTarget}>
+                  <Ionicons name="radio" size={11} color={Colors.cyan}/>
+                  <Text style={s.ssidTargetText}>Target: {session.hotspot_ssid}</Text>
+                </View>
+              )}
+
+              {scannedNetworks.length > 0 && !wifiVerified && (
+                <View style={s.networkList}>
+                  <Text style={s.networkListTitle}>DETECTED NETWORKS ({scannedNetworks.length})</Text>
+                  {scannedNetworks.slice(0, 8).map((net, i) => (
+                    <View key={i} style={s.networkItem}>
+                      <Ionicons name="wifi" size={10} color={Colors.textDim}/>
+                      <Text style={s.networkName} numberOfLines={1}>{net.SSID || '(Hidden)'}</Text>
+                      <Text style={s.networkSignal}>{net.level}dBm</Text>
+                    </View>
+                  ))}
+                  {scannedNetworks.length > 8 && (
+                    <Text style={s.networkMore}>+{scannedNetworks.length - 8} more networks</Text>
+                  )}
+                </View>
+              )}
+            </GlowCard>
+
+            {error?<Text style={s.errText}>{error}</Text>:null}
+
+            {!wifiVerified && !wifiScanning && (
+              <CyberButton label="Scan Again" color="cyan" onPress={scanWifi} style={{marginTop:14}}/>
+            )}
+
+            {/* Remove skip button -> Mandatory Wi-Fi checking */}
+          </View>
+        )}
+
         {/* ── Step 1: 2FA ── */}
         {step==='VERIFY_2FA'&&(
           <View>
@@ -138,7 +287,7 @@ export default function MarkAttendanceScreen({ route, navigation }) {
               ))}
             </View>
             {error?<Text style={s.errText}>{error}</Text>:null}
-            <CyberButton label="Verify Code" color="cyan" onPress={proceed2FA} style={{marginTop:14}}/>
+            <CyberButton label="Verify Code" color="cyan" onPress={proceed2FA} loading={loading} style={{marginTop:14}}/>
           </View>
         )}
 
@@ -177,14 +326,15 @@ export default function MarkAttendanceScreen({ route, navigation }) {
         {step==='SUBMIT'&&(
           <View>
             <Text style={s.stepTitle}>CONFIRM & SUBMIT</Text>
-            <Text style={s.stepDesc}>All three verification layers must pass to mark attendance.</Text>
+            <Text style={s.stepDesc}>All verification layers must pass to mark attendance.</Text>
             <GlowCard color="cyan" style={{marginBottom:16}}>
               <Text style={s.checkTitle}>VERIFICATION SUMMARY</Text>
               {[
-                {label:'2FA Code',   done:true,     val:`${twoFaCode.slice(0,3)} ${twoFaCode.slice(3)}`},
-                {label:'Face Image', done:!!capturedImg, val:capturedImg?'Captured ✓':'Not captured'},
-                {label:'Device MAC', done:!!MAC,    val:MAC},
-                {label:'Session ID', done:true,     val:(session?.session_id||'').slice(0,8)+'...'},
+                {label:'Wi-Fi Range',  done:wifiVerified,   val:wifiVerified ? `${session?.hotspot_ssid || 'Skipped'} ✓` : 'Not verified'},
+                {label:'2FA Code',     done:true,           val:`${twoFaCode.slice(0,3)} ${twoFaCode.slice(3)}`},
+                {label:'Face Image',   done:!!capturedImg,  val:capturedImg?'Captured ✓':'Not captured'},
+                {label:'Device MAC',   done:!!MAC,          val:MAC},
+                {label:'Session ID',   done:true,           val:(session?.session_id||'').slice(0,8)+'...'},
               ].map((c,i)=>(
                 <View key={i} style={s.checkRow}>
                   <Ionicons name={c.done?'checkmark-circle':'close-circle'} size={15} color={c.done?Colors.green:Colors.red}/>
@@ -215,17 +365,34 @@ const s = StyleSheet.create({
   stepItem:{alignItems:'center'},
   stepCircle:{width:26,height:26,borderRadius:13,borderWidth:1,borderColor:Colors.border,backgroundColor:Colors.cardBg,alignItems:'center',justifyContent:'center',marginBottom:3},
   stepN:   {fontFamily:'monospace',fontSize:10,color:Colors.textMuted},
-  stepL:   {fontFamily:'monospace',fontSize:8,color:Colors.textMuted,letterSpacing:0.5},
+  stepL:   {fontFamily:'monospace',fontSize:7,color:Colors.textMuted,letterSpacing:0.5},
   stepLine:{flex:1,height:1,backgroundColor:Colors.border,marginBottom:14},
   content: {padding:Spacing.md,paddingBottom:40},
   stepTitle:{fontFamily:'monospace',fontSize:15,fontWeight:'800',color:Colors.cyan,letterSpacing:1,marginBottom:5},
   stepDesc: {fontFamily:'monospace',fontSize:11,color:Colors.textSecondary,lineHeight:17,marginBottom:18},
+
+  // Wi-Fi step
+  wifiCard:     {alignItems:'center',padding:24,marginBottom:14},
+  wifiIconWrap: {marginBottom:14},
+  wifiStatus:   {fontFamily:'monospace',fontSize:12,fontWeight:'700',color:Colors.cyan,letterSpacing:2,textAlign:'center',marginBottom:8},
+  ssidTarget:   {flexDirection:'row',alignItems:'center',gap:5,backgroundColor:Colors.cyanGlow,borderWidth:1,borderColor:Colors.cyanBorder,borderRadius:3,paddingHorizontal:10,paddingVertical:4,marginTop:4},
+  ssidTargetText:{fontFamily:'monospace',fontSize:10,color:Colors.cyan,letterSpacing:0.5},
+  networkList:  {marginTop:16,width:'100%',borderTopWidth:1,borderTopColor:Colors.border,paddingTop:10},
+  networkListTitle:{fontFamily:'monospace',fontSize:8,color:Colors.textMuted,letterSpacing:1.5,marginBottom:6,textAlign:'center'},
+  networkItem:  {flexDirection:'row',alignItems:'center',gap:6,paddingVertical:4,borderBottomWidth:0.5,borderBottomColor:Colors.border},
+  networkName:  {fontFamily:'monospace',fontSize:10,color:Colors.textSecondary,flex:1},
+  networkSignal:{fontFamily:'monospace',fontSize:8,color:Colors.textDim},
+  networkMore:  {fontFamily:'monospace',fontSize:8,color:Colors.textDim,textAlign:'center',marginTop:4},
+
+  // 2FA step
   codeRow:  {flexDirection:'row',gap:8,justifyContent:'center',marginBottom:24},
   codeBox:  {width:(W-Spacing.md*2-40)/6,height:54,borderRadius:3,borderWidth:1,borderColor:Colors.border,backgroundColor:Colors.cardBg,alignItems:'center',justifyContent:'center'},
   codeBoxText:{fontFamily:'monospace',fontSize:22,fontWeight:'800',color:Colors.textPrimary},
-  numpad:   {flexDirection:'row',flexWrap:'wrap',gap:10,justifyContent:'center',marginBottom:6},
-  numKey:   {width:(W-Spacing.md*2-20)/3,height:50,borderRadius:3,borderWidth:1,borderColor:Colors.border,backgroundColor:Colors.cardBg,alignItems:'center',justifyContent:'center'},
+  numpad:   {flexDirection:'row',flexWrap:'wrap',justifyContent:'space-between',marginBottom:6,paddingHorizontal:2},
+  numKey:   {width:'31.5%',height:50,borderRadius:3,borderWidth:1,borderColor:Colors.border,backgroundColor:Colors.cardBg,alignItems:'center',justifyContent:'center',marginBottom:8},
   numKeyText:{fontFamily:'monospace',fontSize:20,color:Colors.textPrimary},
+
+  // Camera step
   permWrap: {alignItems:'center',paddingVertical:36,gap:10},
   permText: {fontFamily:'monospace',fontSize:11,color:Colors.textSecondary,textAlign:'center',lineHeight:17},
   camWrap:  {borderRadius:8,overflow:'hidden',position:'relative',marginBottom:14},
@@ -238,6 +405,8 @@ const s = StyleSheet.create({
   fcBL:     {bottom:0,left:0,borderRightWidth:0,borderTopWidth:0},
   fcBR:     {bottom:0,right:0,borderLeftWidth:0,borderTopWidth:0},
   faceScanTxt:{fontFamily:'monospace',fontSize:9,color:Colors.cyan,letterSpacing:2,marginTop:14},
+
+  // Common
   errText:  {fontFamily:'monospace',fontSize:11,color:Colors.red,textAlign:'center',marginVertical:8},
   errBox:   {flexDirection:'row',gap:7,backgroundColor:Colors.redGlow,borderWidth:1,borderColor:Colors.redBorder,borderRadius:3,padding:10,marginBottom:12,alignItems:'center'},
   errBoxText:{fontFamily:'monospace',fontSize:11,color:Colors.red,flex:1},

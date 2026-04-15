@@ -54,7 +54,7 @@ export default function LoginScreen() {
     if (!form.id||!form.password){setError('All fields required.');shake();return;}
     setLoading(true); setError('');
     try {
-      const data = await authApi.login(role.key, form.id, form.password, form.division);
+      const data = await authApi.login(role.key, form.id.trim(), form.password, form.division);
       await login(data.access_token, data.role, data.profile);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       // RootNavigator automatically switches to the correct screen based on role
