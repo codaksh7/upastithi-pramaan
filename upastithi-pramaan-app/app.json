@@ -55,12 +55,20 @@
       "expo-secure-store",
       "expo-document-picker",
       "@react-native-community/datetimepicker",
-      "./plugins/withWifiReborn"
+      "./plugins/withWifiReborn",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
     ],
     "scheme": "upastithi",
     "extra": {
       "eas": {
-        "projectId": "07540938-fd3a-4023-b020-86ad59aced54"
+        "projectId": "61a5015c-ffad-4535-807a-b78af612b475"
       }
     }
   }

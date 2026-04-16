@@ -95,25 +95,29 @@ export default function MarkAttendanceScreen({ route, navigation }) {
     setStep('SUBMIT');
   };
 
+  // ── UPDATED: Real face capture + base64 ──────────────────────────────────────
   const captureAndContinue = async () => {
+    if (!cameraReady || !cameraRef.current) {
+      setError('Camera not ready — please wait a moment and try again.');
+      return;
+    }
     setLoading(true);
     setError('');
     try {
-      // Auto-pass face scan for testing (prevents first-time white screen crash)
-      setTimeout(() => {
-        setCapturedImg('FACE_SCAN_AUTO_PASSED');
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        setStep('WIFI_CHECK');
-        setLoading(false);
-      }, 500);
-    } catch(e) {
-      console.warn('Camera capture error:', e);
-      setCapturedImg('FACE_SCAN_AUTO_PASSED');
+      // Capture photo with base64 (matches Gemini backend expecting image_base64)
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.7, base64: true });
+      setCapturedImg(photo.base64);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setStep('WIFI_CHECK');
+    } catch (e) {
+      console.warn('Camera capture error:', e);
+      setError(e.message || 'Face capture failed. Please try again.');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
       setLoading(false);
     }
   };
+  // ─────────────────────────────────────────────────────────────────────────────
 
   const submitAttendance = async () => {
     setLoading(true); setError('');
@@ -262,8 +266,6 @@ export default function MarkAttendanceScreen({ route, navigation }) {
             {!wifiVerified && !wifiScanning && (
               <CyberButton label="Scan Again" color="cyan" onPress={scanWifi} style={{marginTop:14}}/>
             )}
-
-            {/* Remove skip button -> Mandatory Wi-Fi checking */}
           </View>
         )}
 
@@ -317,7 +319,7 @@ export default function MarkAttendanceScreen({ route, navigation }) {
             )}
             {error?<Text style={s.errText}>{error}</Text>:null}
             {permission?.granted&&(
-              <CyberButton label={cameraReady ? 'Capture & Continue' : 'Continue (Auto-Pass)'} color="cyan" onPress={captureAndContinue} loading={loading} style={{marginTop:14}}/>
+              <CyberButton label={cameraReady ? 'Capture & Continue' : 'Initializing Camera...'} color="cyan" onPress={captureAndContinue} loading={loading} disabled={!cameraReady} style={{marginTop:14}}/>
             )}
           </View>
         )}
