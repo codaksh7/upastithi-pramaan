@@ -110,9 +110,16 @@ def mark_attendance(body: MarkAttendanceRequest, user: dict = Depends(student_on
     if not session_data.get("active"):
         raise HTTPException(400, "Session is no longer active")
 
-    # 1b. Server-side Wi-Fi proximity enforcement
-    # If faculty configured a hotspot SSID, the student app MUST have verified Wi-Fi proximity
-    if session_data.get("hotspot_ssid") and not body.wifi_verified:
+    # 1b. Server-side Wi-Fi proximity enforcement via BSSID comparison
+    session_bssid = session_data.get("hotspot_bssid")
+    if session_bssid:
+        # If faculty stored a BSSID, student MUST send the matching scanned_bssid
+        if not body.scanned_bssid:
+            raise HTTPException(403, "Wi-Fi proximity verification is required. You must be in range of the faculty's hotspot.")
+        if body.scanned_bssid.upper() != session_bssid.upper():
+            raise HTTPException(403, "Wi-Fi BSSID mismatch. The scanned hotspot does not match the faculty's hotspot.")
+    elif session_data.get("hotspot_ssid") and not body.wifi_verified:
+        # Fallback: legacy SSID-only check
         raise HTTPException(403, "Wi-Fi proximity verification is required. You must be in range of the faculty's hotspot.")
 
     # 2. Validate 2FA code
@@ -231,7 +238,7 @@ def get_my_active_session(user: dict = Depends(student_only)):
 
     # Get active sessions for those subjects
     sessions_res = db.table("sessions").select(
-        "id, started_at, subject_id, hotspot_ssid, faculty:faculty_id(name)"
+        "id, started_at, subject_id, hotspot_ssid, hotspot_bssid, faculty:faculty_id(name)"
     ).in_("subject_id", subject_ids).eq("active", True).execute()
     
     active_sessions = safe_data(sessions_res) or []
@@ -254,6 +261,7 @@ def get_my_active_session(user: dict = Depends(student_only)):
                 "faculty_name": fac_name,
                 "started_at": sess["started_at"],
                 "hotspot_ssid": sess.get("hotspot_ssid"),
+                "hotspot_bssid": sess.get("hotspot_bssid"),
             }
             
     return None

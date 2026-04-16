@@ -34,6 +34,7 @@ class MarkAttendanceRequest(BaseModel):
     image_base64: Optional[str] = None
     twofa_code: Optional[str] = None
     wifi_verified: bool = False
+    scanned_bssid: Optional[str] = None   # BSSID that the student's device matched during Wi-Fi scan
 
 
 class Verify2FARequest(BaseModel):

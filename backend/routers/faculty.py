@@ -127,6 +127,8 @@ def start_session(body: SessionStart, user: dict = Depends(faculty_only)):
     }
     if body.hotspot_ssid:
         insert_data["hotspot_ssid"] = body.hotspot_ssid
+    if body.hotspot_bssid:
+        insert_data["hotspot_bssid"] = body.hotspot_bssid
 
     res = db.table("sessions").insert(insert_data).execute()
 
