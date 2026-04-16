@@ -28,14 +28,23 @@ export default function MarkAttendanceScreen({ route, navigation }) {
   const MAC = 'AA:BB:CC:DD:EE:FF'; // RN: actual MAC needs native module
 
   // Wi-Fi scan state
-  const [wifiScanning,   setWifiScanning]   = useState(false);
-  const [wifiVerified,   setWifiVerified]   = useState(false);
-  const [scannedNetworks,setScannedNetworks]= useState([]);
+  const [wifiScanning,    setWifiScanning]    = useState(false);
+  const [wifiVerified,    setWifiVerified]    = useState(false);
+  const [scannedNetworks, setScannedNetworks] = useState([]);
+  const [matchedBssid,    setMatchedBssid]    = useState(null);
 
   // Auto-start Wi-Fi check when step reaches WIFI_CHECK
   useEffect(() => {
-    if (step === 'WIFI_CHECK' && session?.hotspot_ssid && !wifiVerified && !wifiScanning) {
-      scanWifi();
+    if (step === 'WIFI_CHECK' && !wifiVerified && !wifiScanning) {
+      // Only scan if session has BSSID or SSID configured
+      if (session?.hotspot_bssid || session?.hotspot_ssid) {
+        scanWifi();
+      } else {
+        // No hotspot configured — skip proximity check
+        setWifiVerified(true);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        setStep('VERIFY_2FA');
+      }
     }
   }, [step]);
 
@@ -63,17 +72,70 @@ export default function MarkAttendanceScreen({ route, navigation }) {
   const scanWifi = async () => {
     setWifiScanning(true);
     setError('');
+    setMatchedBssid(null);
     try {
-      // Auto-pass Wi-Fi for testing as requested
-      setTimeout(() => {
+      // Request location permission (required for Wi-Fi scanning on Android)
+      const hasPermission = await requestLocationPermission();
+      if (!hasPermission) {
+        setError('Location permission denied — Wi-Fi scanning requires location permission to be enabled.');
+        setWifiScanning(false);
+        return;
+      }
+
+      // Perform actual Wi-Fi scan using react-native-wifi-reborn
+      const networks = await WifiManager.loadWifiList();
+      setScannedNetworks(networks || []);
+
+      const targetBssid = session?.hotspot_bssid?.toUpperCase();
+      const targetSsid = session?.hotspot_ssid;
+
+      if (targetBssid) {
+        // ── Primary: BSSID comparison ──
+        const match = (networks || []).find(net => {
+          const netBssid = (net.BSSID || '').toUpperCase();
+          return netBssid === targetBssid;
+        });
+
+        if (match) {
+          setMatchedBssid(match.BSSID);
+          setWifiVerified(true);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          // Auto-advance after brief delay so user sees the success state
+          setTimeout(() => setStep('VERIFY_2FA'), 1200);
+        } else {
+          setError(
+            `Faculty hotspot BSSID not found in range.\n` +
+            `Target: ${targetBssid}\n` +
+            `Scanned ${(networks || []).length} network(s). Ensure you are near the faculty's hotspot.`
+          );
+        }
+      } else if (targetSsid) {
+        // ── Fallback: SSID comparison (legacy) ──
+        const match = (networks || []).find(net =>
+          (net.SSID || '').toLowerCase() === targetSsid.toLowerCase()
+        );
+
+        if (match) {
+          setMatchedBssid(match.BSSID || 'SSID_MATCH');
+          setWifiVerified(true);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          setTimeout(() => setStep('VERIFY_2FA'), 1200);
+        } else {
+          setError(
+            `Faculty hotspot "${targetSsid}" not found in range.\n` +
+            `Scanned ${(networks || []).length} network(s). Move closer to the faculty's hotspot.`
+          );
+        }
+      } else {
+        // No hotspot configured — auto-pass
         setWifiVerified(true);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         setStep('VERIFY_2FA');
-        setWifiScanning(false);
-      }, 800);
+      }
     } catch (e) {
       console.warn('Wi-Fi scan error:', e);
       setError('Wi-Fi scan failed — Could not scan nearby networks. Ensure Wi-Fi and Location services are enabled on your device.');
+    } finally {
       setWifiScanning(false);
     }
   };
@@ -118,7 +180,14 @@ export default function MarkAttendanceScreen({ route, navigation }) {
   const submitAttendance = async () => {
     setLoading(true); setError('');
     try {
-      await studentApi.markAttendance({ session_id:session.session_id, mac_address:MAC, twofa_code:twoFaCode, image_base64:capturedImg, wifi_verified:wifiVerified });
+      await studentApi.markAttendance({
+        session_id: session.session_id,
+        mac_address: MAC,
+        twofa_code: twoFaCode,
+        image_base64: capturedImg,
+        wifi_verified: wifiVerified,
+        scanned_bssid: matchedBssid || null,
+      });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setSuccess(true);
     } catch(e) {
@@ -127,9 +196,11 @@ export default function MarkAttendanceScreen({ route, navigation }) {
       if (msg.includes('2fa') || msg.includes('invalid') && msg.includes('code') || msg.includes('expired')) {
         userError = '6-digit code incorrect — The code you entered does not match or has expired. Ask your faculty for the current code.';
         setStep('VERIFY_2FA');
-      } else if (msg.includes('wi-fi') || msg.includes('proximity') || msg.includes('hotspot')) {
-        userError = 'Wi-Fi proximity check failed — You must be in range of the faculty\'s hotspot to mark attendance.';
+      } else if (msg.includes('bssid') || msg.includes('wi-fi') || msg.includes('proximity') || msg.includes('hotspot')) {
+        userError = 'Wi-Fi proximity check failed — Your scanned BSSID does not match the faculty\'s hotspot. Move closer and retry.';
         setStep('WIFI_CHECK');
+        setWifiVerified(false);
+        setMatchedBssid(null);
       } else if (msg.includes('face') || msg.includes('verification failed')) {
         userError = 'Face scan failed — Face could not be verified. Please try again with better lighting.';
         setStep('SCAN_FACE');
@@ -160,6 +231,7 @@ export default function MarkAttendanceScreen({ route, navigation }) {
           <Text style={s.successDetail}>Session: {session?.subject_code}</Text>
           <Text style={s.successDetail}>Subject: {session?.subject_name}</Text>
           <Text style={s.successDetail}>Verification: Wi-Fi ✓ + 2FA ✓ + Face ✓ + MAC ✓</Text>
+          {matchedBssid && <Text style={s.successDetail}>BSSID Match: {matchedBssid}</Text>}
         </GlowCard>
         <CyberButton label="Back to Dashboard" color="green" onPress={()=>navigation.goBack()} style={{marginTop:22,width:'100%'}}/>
       </View>
@@ -208,14 +280,16 @@ export default function MarkAttendanceScreen({ route, navigation }) {
       </View>
 
       <ScrollView style={{flex:1}} contentContainerStyle={s.content}>
-        {/* ── Step 0: Wi-Fi Proximity Check ── */}
+        {/* ── Step: Wi-Fi Proximity Check (BSSID-based) ── */}
         {step==='WIFI_CHECK'&&(
           <View>
             <Text style={s.stepTitle}>WI-FI PROXIMITY CHECK</Text>
             <Text style={s.stepDesc}>
-              {session?.hotspot_ssid
-                ? `Scanning for faculty hotspot "${session.hotspot_ssid}" to verify you are in the classroom.`
-                : 'No hotspot configured for this session. Skipping proximity check...'}
+              {session?.hotspot_bssid
+                ? `Scanning for faculty hotspot BSSID to verify you are in the classroom.`
+                : session?.hotspot_ssid
+                  ? `Scanning for faculty hotspot "${session.hotspot_ssid}" to verify you are in the classroom.`
+                  : 'No hotspot configured for this session. Skipping proximity check...'}
             </Text>
 
             <GlowCard color="cyan" style={s.wifiCard}>
@@ -230,16 +304,34 @@ export default function MarkAttendanceScreen({ route, navigation }) {
               </View>
 
               <Text style={[s.wifiStatus, wifiVerified && {color: Colors.green}, error && {color: Colors.red}]}>
-                {wifiScanning ? 'SCANNING NEARBY NETWORKS...' : wifiVerified ? 'IN RANGE — VERIFIED ✓' : error ? 'NOT IN RANGE' : 'READY TO SCAN'}
+                {wifiScanning ? 'SCANNING NEARBY NETWORKS...' : wifiVerified ? 'BSSID MATCH — VERIFIED ✓' : error ? 'NOT IN RANGE' : 'READY TO SCAN'}
               </Text>
 
-              {session?.hotspot_ssid && (
+              {/* Target BSSID display */}
+              {session?.hotspot_bssid && (
                 <View style={s.ssidTarget}>
+                  <Ionicons name="hardware-chip" size={11} color={Colors.cyan}/>
+                  <Text style={s.ssidTargetText}>Target BSSID: {session.hotspot_bssid}</Text>
+                </View>
+              )}
+              
+              {/* Target SSID display */}
+              {session?.hotspot_ssid && (
+                <View style={[s.ssidTarget,{marginTop:4}]}>
                   <Ionicons name="radio" size={11} color={Colors.cyan}/>
-                  <Text style={s.ssidTargetText}>Target: {session.hotspot_ssid}</Text>
+                  <Text style={s.ssidTargetText}>SSID: {session.hotspot_ssid}</Text>
                 </View>
               )}
 
+              {/* Matched BSSID display */}
+              {matchedBssid && wifiVerified && (
+                <View style={[s.ssidTarget,{borderColor:Colors.greenBorder,backgroundColor:Colors.greenGlow,marginTop:8}]}>
+                  <Ionicons name="checkmark-circle" size={11} color={Colors.green}/>
+                  <Text style={[s.ssidTargetText,{color:Colors.green}]}>Matched: {matchedBssid}</Text>
+                </View>
+              )}
+
+              {/* Scanned networks list */}
               {scannedNetworks.length > 0 && !wifiVerified && (
                 <View style={s.networkList}>
                   <Text style={s.networkListTitle}>DETECTED NETWORKS ({scannedNetworks.length})</Text>
@@ -247,6 +339,7 @@ export default function MarkAttendanceScreen({ route, navigation }) {
                     <View key={i} style={s.networkItem}>
                       <Ionicons name="wifi" size={10} color={Colors.textDim}/>
                       <Text style={s.networkName} numberOfLines={1}>{net.SSID || '(Hidden)'}</Text>
+                      <Text style={s.networkBssid} numberOfLines={1}>{net.BSSID || '—'}</Text>
                       <Text style={s.networkSignal}>{net.level}dBm</Text>
                     </View>
                   ))}
@@ -267,7 +360,7 @@ export default function MarkAttendanceScreen({ route, navigation }) {
           </View>
         )}
 
-        {/* ── Step 1: 2FA ── */}
+        {/* ── Step: 2FA ── */}
         {step==='VERIFY_2FA'&&(
           <View>
             <Text style={s.stepTitle}>ENTER 2FA CODE</Text>
@@ -291,7 +384,7 @@ export default function MarkAttendanceScreen({ route, navigation }) {
           </View>
         )}
 
-        {/* ── Step 2: Face scan ── */}
+        {/* ── Step: Face scan ── */}
         {step==='SCAN_FACE'&&(
           <View>
             <Text style={s.stepTitle}>FACE SCAN</Text>
@@ -322,7 +415,7 @@ export default function MarkAttendanceScreen({ route, navigation }) {
           </View>
         )}
 
-        {/* ── Step 3: Submit ── */}
+        {/* ── Step: Submit ── */}
         {step==='SUBMIT'&&(
           <View>
             <Text style={s.stepTitle}>CONFIRM & SUBMIT</Text>
@@ -331,7 +424,7 @@ export default function MarkAttendanceScreen({ route, navigation }) {
               <Text style={s.checkTitle}>VERIFICATION SUMMARY</Text>
               {[
                 {label:'Face Image',   done:!!capturedImg,  val:capturedImg?'Captured ✓':'Not captured'},
-                {label:'Wi-Fi Range',  done:wifiVerified,   val:wifiVerified ? `${session?.hotspot_ssid || 'Skipped'} ✓` : 'Not verified'},
+                {label:'Wi-Fi BSSID',  done:wifiVerified,   val:matchedBssid ? `${matchedBssid} ✓` : wifiVerified ? 'Verified ✓' : 'Not verified'},
                 {label:'2FA Code',     done:true,           val:`${twoFaCode.slice(0,3)} ${twoFaCode.slice(3)}`},
                 {label:'Device MAC',   done:!!MAC,          val:MAC},
                 {label:'Session ID',   done:true,           val:(session?.session_id||'').slice(0,8)+'...'},
@@ -380,6 +473,7 @@ const s = StyleSheet.create({
   networkListTitle:{fontFamily:'monospace',fontSize:8,color:Colors.textMuted,letterSpacing:1.5,marginBottom:6,textAlign:'center'},
   networkItem:  {flexDirection:'row',alignItems:'center',gap:6,paddingVertical:4,borderBottomWidth:0.5,borderBottomColor:Colors.border},
   networkName:  {fontFamily:'monospace',fontSize:10,color:Colors.textSecondary,flex:1},
+  networkBssid: {fontFamily:'monospace',fontSize:8,color:Colors.textDim,maxWidth:120},
   networkSignal:{fontFamily:'monospace',fontSize:8,color:Colors.textDim},
   networkMore:  {fontFamily:'monospace',fontSize:8,color:Colors.textDim,textAlign:'center',marginTop:4},
 

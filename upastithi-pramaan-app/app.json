@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Upastithi-Pramaan",
-    "slug": "upastithi-pramaan",
+    "slug": "upma",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/Updated-icon--2.png",
@@ -55,13 +55,15 @@
       "expo-secure-store",
       "expo-document-picker",
       "@react-native-community/datetimepicker",
-      "./plugins/withWifiReborn"
+      "./plugins/withWifiReborn",
+      "./plugins/withHotspotModule"
     ],
     "scheme": "upastithi",
     "extra": {
       "eas": {
-        "projectId": "07540938-fd3a-4023-b020-86ad59aced54"
+        "projectId": "0109bed5-b764-48c5-b693-d8d8689f1d5b"
       }
-    }
+    },
+    "owner": "rodriguesmarvel26s-organization"
   }
 }

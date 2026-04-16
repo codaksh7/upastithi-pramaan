@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   RefreshControl, Alert, Switch, Animated, TextInput,
+  NativeModules, Platform, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,6 +13,8 @@ import { useAuth } from '../../context/AuthContext';
 import Background from '../../components/Background';
 import { GlowCard, Badge, CyberButton, SectionLabel, PulseDot, Divider, LoadingScreen } from '../../components/UI';
 import { Colors, Spacing } from '../../utils/theme';
+
+const { HotspotModule } = NativeModules;
 
 export default function FacultySessionScreen() {
   const { profile, logout } = useAuth();
@@ -28,6 +31,14 @@ export default function FacultySessionScreen() {
   const [refreshingCode,setRefreshingCode]= useState(false);
   const timerRef = useRef(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // ── Hotspot BSSID detection state ──
+  const [hotspotBssid,      setHotspotBssid]      = useState(null);
+  const [hotspotDetecting,  setHotspotDetecting]  = useState(false);
+  const [hotspotActive,     setHotspotActive]     = useState(false);
+  const [manualBssid,       setManualBssid]       = useState('');
+  const [showManualEntry,   setShowManualEntry]   = useState(false);
+  const detectIntervalRef = useRef(null);
 
   useEffect(()=>{
     if(activeSession){
@@ -91,11 +102,82 @@ export default function FacultySessionScreen() {
     return () => clearInterval(poll);
   }, [activeSession]);
 
+  /* ── Hotspot BSSID detection ── */
+  const detectHotspotBssid = useCallback(async () => {
+    if (!HotspotModule) {
+      console.warn('HotspotModule not available — running in Expo Go or unsupported platform');
+      return;
+    }
+    try {
+      const isActive = await HotspotModule.isHotspotActive();
+      setHotspotActive(isActive);
+      if (isActive) {
+        const bssid = await HotspotModule.getHotspotBssid();
+        if (bssid) {
+          setHotspotBssid(bssid);
+          setHotspotDetecting(false);
+          clearInterval(detectIntervalRef.current);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+      }
+    } catch (e) {
+      console.warn('Hotspot detection error:', e);
+    }
+  }, []);
+
+  const startHotspotDetection = useCallback(() => {
+    setHotspotDetecting(true);
+    setHotspotBssid(null);
+    detectHotspotBssid(); // immediate first check
+    detectIntervalRef.current = setInterval(detectHotspotBssid, 2000);
+  }, [detectHotspotBssid]);
+
+  const stopHotspotDetection = useCallback(() => {
+    setHotspotDetecting(false);
+    clearInterval(detectIntervalRef.current);
+  }, []);
+
+  // Clean up detection interval on unmount
+  useEffect(() => {
+    return () => clearInterval(detectIntervalRef.current);
+  }, []);
+
+  const openHotspotSettings = async () => {
+    try {
+      if (HotspotModule) {
+        await HotspotModule.openHotspotSettings();
+        // Start polling for hotspot activation after opening settings
+        startHotspotDetection();
+      } else {
+        Alert.alert('Unavailable', 'Hotspot settings cannot be opened in Expo Go. Please enable your hotspot manually from your device settings.');
+      }
+    } catch (e) {
+      Alert.alert('Error', 'Could not open hotspot settings. Please enable manually.');
+    }
+  };
+
   const startSession = async () => {
     if(!selectedSub){Alert.alert('Error','Select a subject first.');return;}
-    if(!hotspotSsid.trim()){Alert.alert('Error','Enter your Wi-Fi Hotspot name for proximity verification.');return;}
+    
+    // Determine which BSSID to use
+    const bssidToSend = hotspotBssid || (showManualEntry && manualBssid.trim()) || null;
+    
+    if (!bssidToSend && !hotspotSsid.trim()) {
+      Alert.alert('Error', 'Enable your Wi-Fi hotspot or enter a hotspot SSID/BSSID for proximity verification.');
+      return;
+    }
+
     setStarting(true);
-    try { await facultyApi.startSession(selectedSub.id, hotspotSsid.trim()); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); await fetchData(); }
+    try {
+      await facultyApi.startSession(
+        selectedSub.id,
+        hotspotSsid.trim() || null,
+        bssidToSend
+      );
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      stopHotspotDetection();
+      await fetchData();
+    }
     catch(e){Alert.alert('Error',e.message);}
     finally{setStarting(false);}
   };
@@ -171,10 +253,18 @@ export default function FacultySessionScreen() {
               <Divider/>
               <Text style={s.activeSubj}>{activeSession.subjects?.code} — {activeSession.subjects?.name}</Text>
               <Text style={s.activeMeta}>Started: {new Date(activeSession.started_at).toLocaleTimeString()}</Text>
+              
+              {/* Hotspot info badges */}
               {activeSession.hotspot_ssid&&(
                 <View style={s.ssidBadge}>
                   <Ionicons name="wifi" size={12} color={Colors.cyan}/>
-                  <Text style={s.ssidBadgeText}>HOTSPOT: {activeSession.hotspot_ssid}</Text>
+                  <Text style={s.ssidBadgeText}>SSID: {activeSession.hotspot_ssid}</Text>
+                </View>
+              )}
+              {activeSession.hotspot_bssid&&(
+                <View style={[s.ssidBadge,{borderColor:Colors.greenBorder,backgroundColor:Colors.greenGlow}]}>
+                  <Ionicons name="hardware-chip" size={12} color={Colors.green}/>
+                  <Text style={[s.ssidBadgeText,{color:Colors.green}]}>BSSID: {activeSession.hotspot_bssid}</Text>
                 </View>
               )}
 
@@ -202,7 +292,9 @@ export default function FacultySessionScreen() {
               <Ionicons name="radio-button-off" size={38} color={Colors.textMuted}/>
             </View>
             <Text style={s.noSessTitle}>NO ACTIVE SESSION</Text>
-            <Text style={s.noSessSub}>Select a subject to start an attendance session</Text>
+            <Text style={s.noSessSub}>Select a subject and enable your hotspot to start</Text>
+
+            {/* Subject selection */}
             <SectionLabel label="Select Subject" style={{marginTop:18}}/>
             {subjects.length===0
               ? <Text style={{fontFamily:'monospace',fontSize:11,color:Colors.textMuted,textAlign:'center',padding:16}}>No subjects assigned. Contact admin.</Text>
@@ -216,7 +308,104 @@ export default function FacultySessionScreen() {
                 </TouchableOpacity>
               ))
             }
-            <SectionLabel label="Wi-Fi Hotspot Name" style={{marginTop:18}}/>
+
+            {/* ── Hotspot BSSID Detection ── */}
+            <SectionLabel label="Wi-Fi Hotspot (Proximity Check)" style={{marginTop:18}}/>
+            
+            <GlowCard color={hotspotBssid ? 'green' : 'cyan'} style={s.hotspotCard}>
+              <View style={s.hotspotHeader}>
+                <Ionicons 
+                  name={hotspotBssid ? 'checkmark-circle' : hotspotDetecting ? 'radio' : 'wifi'} 
+                  size={28} 
+                  color={hotspotBssid ? Colors.green : Colors.cyan}
+                />
+                <View style={{flex:1,marginLeft:12}}>
+                  <Text style={[s.hotspotTitle, hotspotBssid && {color: Colors.green}]}>
+                    {hotspotBssid ? 'HOTSPOT DETECTED ✓' : hotspotDetecting ? 'DETECTING HOTSPOT...' : 'ENABLE YOUR HOTSPOT'}
+                  </Text>
+                  <Text style={s.hotspotSubtext}>
+                    {hotspotBssid 
+                      ? 'MAC address will be used for student proximity verification'
+                      : 'Turn on your mobile hotspot so students can verify proximity'}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Detected BSSID display */}
+              {hotspotBssid && (
+                <View style={s.bssidDisplay}>
+                  <Ionicons name="hardware-chip" size={14} color={Colors.green}/>
+                  <Text style={s.bssidText}>{hotspotBssid}</Text>
+                  <TouchableOpacity onPress={() => { setHotspotBssid(null); startHotspotDetection(); }}>
+                    <Ionicons name="refresh" size={14} color={Colors.textMuted}/>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Detection spinner */}
+              {hotspotDetecting && !hotspotBssid && (
+                <View style={s.detectingWrap}>
+                  <ActivityIndicator size="small" color={Colors.cyan}/>
+                  <Text style={s.detectingText}>Scanning network interfaces...</Text>
+                </View>
+              )}
+
+              {/* Action buttons */}
+              {!hotspotBssid && !hotspotDetecting && (
+                <View style={s.hotspotActions}>
+                  <TouchableOpacity style={s.hotspotActionBtn} onPress={openHotspotSettings}>
+                    <Ionicons name="settings" size={14} color={Colors.cyan}/>
+                    <Text style={s.hotspotActionText}>OPEN HOTSPOT SETTINGS</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={s.hotspotActionBtn} onPress={startHotspotDetection}>
+                    <Ionicons name="scan" size={14} color={Colors.cyan}/>
+                    <Text style={s.hotspotActionText}>DETECT BSSID</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {hotspotDetecting && !hotspotBssid && (
+                <TouchableOpacity 
+                  style={[s.hotspotActionBtn,{alignSelf:'center',marginTop:8}]} 
+                  onPress={stopHotspotDetection}
+                >
+                  <Ionicons name="stop-circle" size={14} color={Colors.red}/>
+                  <Text style={[s.hotspotActionText,{color:Colors.red}]}>STOP SCANNING</Text>
+                </TouchableOpacity>
+              )}
+            </GlowCard>
+
+            {/* Manual BSSID entry toggle */}
+            <TouchableOpacity 
+              style={s.manualToggle} 
+              onPress={() => setShowManualEntry(!showManualEntry)}
+            >
+              <Ionicons name={showManualEntry ? 'chevron-up' : 'chevron-down'} size={12} color={Colors.textDim}/>
+              <Text style={s.manualToggleText}>
+                {showManualEntry ? 'Hide manual entry' : 'Enter BSSID manually instead'}
+              </Text>
+            </TouchableOpacity>
+
+            {showManualEntry && (
+              <View style={{marginBottom:8}}>
+                <View style={s.ssidInputWrap}>
+                  <Ionicons name="hardware-chip" size={16} color={Colors.cyan}/>
+                  <TextInput
+                    style={s.ssidInput}
+                    placeholder="e.g. AA:BB:CC:DD:EE:FF"
+                    placeholderTextColor={Colors.textDim}
+                    value={manualBssid}
+                    onChangeText={setManualBssid}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                  />
+                </View>
+                <Text style={s.ssidHint}>Enter the MAC address (BSSID) of your Wi-Fi hotspot in XX:XX:XX:XX:XX:XX format.</Text>
+              </View>
+            )}
+
+            {/* Hotspot SSID (optional label) */}
+            <SectionLabel label="Hotspot Name (Optional)" style={{marginTop:10}}/>
             <View style={s.ssidInputWrap}>
               <Ionicons name="wifi" size={16} color={Colors.cyan}/>
               <TextInput
@@ -229,8 +418,16 @@ export default function FacultySessionScreen() {
                 autoCorrect={false}
               />
             </View>
-            <Text style={s.ssidHint}>Enter exact hotspot/Wi-Fi name students must be in range of to mark attendance.</Text>
-            <CyberButton label="Start Session" color="green" onPress={startSession} loading={starting} disabled={!selectedSub||!hotspotSsid.trim()} style={{marginTop:14}}/>
+            <Text style={s.ssidHint}>Display name for the hotspot (shown to students). BSSID is used for actual verification.</Text>
+            
+            <CyberButton 
+              label="Start Session" 
+              color="green" 
+              onPress={startSession} 
+              loading={starting} 
+              disabled={!selectedSub || (!hotspotBssid && !manualBssid.trim() && !hotspotSsid.trim())} 
+              style={{marginTop:14}}
+            />
           </GlowCard>
         )}
 
@@ -301,6 +498,22 @@ const s = StyleSheet.create({
   subBtnActive:{borderColor:Colors.cyan,backgroundColor:Colors.cyanGlow},
   subBtnCode:{fontFamily:'monospace',fontSize:13,fontWeight:'700',color:Colors.textPrimary},
   subBtnName:{fontFamily:'monospace',fontSize:10,color:Colors.textMuted,marginTop:2},
+
+  // Hotspot detection styles
+  hotspotCard: {padding:16,marginBottom:8},
+  hotspotHeader:{flexDirection:'row',alignItems:'flex-start'},
+  hotspotTitle:{fontFamily:'monospace',fontSize:11,fontWeight:'700',color:Colors.cyan,letterSpacing:1},
+  hotspotSubtext:{fontFamily:'monospace',fontSize:9,color:Colors.textMuted,marginTop:3,lineHeight:14},
+  bssidDisplay:{flexDirection:'row',alignItems:'center',gap:8,marginTop:12,backgroundColor:Colors.greenGlow,borderWidth:1,borderColor:Colors.greenBorder,borderRadius:3,paddingHorizontal:12,paddingVertical:8},
+  bssidText:{fontFamily:'monospace',fontSize:13,fontWeight:'700',color:Colors.green,letterSpacing:2,flex:1},
+  detectingWrap:{flexDirection:'row',alignItems:'center',gap:10,marginTop:12,paddingVertical:6},
+  detectingText:{fontFamily:'monospace',fontSize:10,color:Colors.textMuted,letterSpacing:0.5},
+  hotspotActions:{flexDirection:'row',gap:8,marginTop:12},
+  hotspotActionBtn:{flexDirection:'row',alignItems:'center',gap:6,borderWidth:1,borderColor:Colors.cyanBorder,borderRadius:3,paddingHorizontal:12,paddingVertical:8,backgroundColor:Colors.cyanGlow},
+  hotspotActionText:{fontFamily:'monospace',fontSize:9,color:Colors.cyan,letterSpacing:1},
+  manualToggle:{flexDirection:'row',alignItems:'center',gap:5,justifyContent:'center',paddingVertical:8},
+  manualToggleText:{fontFamily:'monospace',fontSize:9,color:Colors.textDim,letterSpacing:0.5},
+
   ssidInputWrap:{flexDirection:'row',alignItems:'center',gap:10,borderWidth:1,borderColor:Colors.cyanBorder,borderRadius:3,backgroundColor:Colors.cardBg,paddingHorizontal:12,paddingVertical:4,marginBottom:4},
   ssidInput: {flex:1,fontFamily:'monospace',fontSize:13,color:Colors.textPrimary,paddingVertical:10},
   ssidHint:  {fontFamily:'monospace',fontSize:8,color:Colors.textDim,marginTop:4,lineHeight:13,letterSpacing:0.3},
