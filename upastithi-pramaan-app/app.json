@@ -4,10 +4,10 @@
     "slug": "upastithi-pramaan",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/Updated-icon--2.png",
     "userInterfaceStyle": "dark",
     "splash": {
-      "image": "./assets/splash.png",
+      "image": "./assets/Updated-icon--2.png",
       "resizeMode": "contain",
       "backgroundColor": "#020408"
     },
@@ -24,7 +24,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/Updated-icon--2.png",
         "backgroundColor": "#020408"
       },
       "package": "com.frcrce.upastithi",
@@ -60,7 +60,7 @@
     "scheme": "upastithi",
     "extra": {
       "eas": {
-        "projectId": "3cdd58f1-ede0-4b07-9c94-8c4b0a1f9842"
+        "projectId": "07540938-fd3a-4023-b020-86ad59aced54"
       }
     }
   }

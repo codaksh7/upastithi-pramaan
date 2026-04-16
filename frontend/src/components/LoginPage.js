@@ -55,7 +55,7 @@ export default function LoginPage() {
     }
     setLoading(true);
     try {
-      const data = await authApi.login(role, form.id, form.password, form.division);
+      const data = await authApi.login(role, form.id.trim(), form.password, form.division);
       saveAuth(data.access_token, data.role, data.profile);
       refreshAuth();
       const dest = role === 'faculty' ? '/faculty-dashboard'
