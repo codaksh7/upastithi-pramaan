@@ -354,7 +354,7 @@ export default function FacultyDashboard() {
                     <div className="fd__status-grid" style={{ marginTop: 16 }}>
                       {[
                         { label: 'Webcam', val: activeSession ? 'Active' : 'Standby', color: activeSession ? 'var(--green)' : 'var(--text-dim)' },
-                        { label: 'Hotspot', val: activeSession ? 'Broadcasting' : 'Off', color: activeSession ? 'var(--cyan)' : 'var(--text-dim)' },
+                        { label: 'BLE Beacon', val: activeSession ? 'Broadcasting' : 'Off', color: activeSession ? 'var(--cyan)' : 'var(--text-dim)' },
                         { label: '2FA Gate', val: activeSession ? 'Open' : 'Closed', color: activeSession ? 'var(--green)' : 'var(--text-dim)' },
                         { label: 'Duration', val: activeSession ? fmt(timer) : '—', color: 'var(--amber)' },
                       ].map((item, i) => (

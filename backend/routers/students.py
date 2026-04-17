@@ -100,56 +100,60 @@ def get_my_attendance(user: dict = Depends(student_only)):
 
 @router.post("/me/attendance", status_code=201)
 def mark_attendance(body: MarkAttendanceRequest, user: dict = Depends(student_only)):
-    try:
-        db = get_supabase()
-        
-        # 1. Verify session is active and fetch 2FA data
-        session_res = db.table("sessions").select(
-            "id, active, twofa_code, twofa_code_expires_at, hotspot_ssid"
-        ).eq("id", body.session_id).maybe_single().execute()
-        session_data = safe_data(session_res)
-        if not session_data:
-            raise HTTPException(404, "Session not found")
-        if not session_data.get("active"):
-            raise HTTPException(400, "Session is no longer active")
+    db = get_supabase()
+    
+    # 1. Verify session is active and fetch 2FA data
+    session_res = db.table("sessions").select(
+        "id, active, twofa_code, twofa_code_expires_at, beacon_id"
+    ).eq("id", body.session_id).maybe_single().execute()
+    session_data = safe_data(session_res)
+    if not session_data:
+        raise HTTPException(404, "Session not found")
+    if not session_data.get("active"):
+        raise HTTPException(400, "Session is no longer active")
 
-        # 1b. Server-side Wi-Fi proximity enforcement
-        if session_data.get("hotspot_ssid") and not body.wifi_verified:
-            raise HTTPException(403, "Wi-Fi proximity verification is required. You must be in range of the faculty's hotspot.")
+    # 1b. Server-side Bluetooth BLE proximity enforcement
+    # If session has a beacon_id, the student must have detected it via BLE scan
+    session_beacon = session_data.get("beacon_id")
+    if session_beacon:
+        if not body.bluetooth_verified:
+            raise HTTPException(403, "Bluetooth proximity verification is required. You must be in BLE range of the faculty's beacon.")
+        if body.detected_beacon_id and body.detected_beacon_id != session_beacon:
+            raise HTTPException(403, "Bluetooth beacon mismatch. The detected beacon does not match this session.")
 
-        # 2. Validate 2FA code
-        stored_code = session_data.get("twofa_code")
-        expires_at_str = session_data.get("twofa_code_expires_at")
-        if not stored_code:
-            raise HTTPException(400, "No 2FA code is set for this session. Ask your faculty to check the session.")
-        if not body.twofa_code:
-            raise HTTPException(422, "2FA code is required to mark attendance.")
-        if body.twofa_code.strip() != stored_code:
-            raise HTTPException(403, "Invalid 2FA code. Please check the code displayed by your faculty.")
-        if expires_at_str:
-            expires_at = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
-            if datetime.now(timezone.utc) > expires_at:
-                raise HTTPException(403, "The 2FA code has expired. Ask your faculty for the new code.")
+    # 2. Validate 2FA code
+    stored_code = session_data.get("twofa_code")
+    expires_at_str = session_data.get("twofa_code_expires_at")
+    if not stored_code:
+        raise HTTPException(400, "No 2FA code is set for this session. Ask your faculty to check the session.")
+    if not body.twofa_code:
+        raise HTTPException(422, "2FA code is required to mark attendance.")
+    if body.twofa_code.strip() != stored_code:
+        raise HTTPException(403, "Invalid 2FA code. Please check the code displayed by your faculty.")
+    if expires_at_str:
+        expires_at = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
+        if datetime.now(timezone.utc) > expires_at:
+            raise HTTPException(403, "The 2FA code has expired. Ask your faculty for the new code.")
 
-        # 3. Verify MAC address belongs to student and is approved
-        device_res = db.table("devices").select("mac, status").eq(
-            "student_id", user["sub"]
-        ).eq("mac", body.mac_address).maybe_single().execute()
-        device_data = safe_data(device_res)
-        
-        if not device_data:
-            raise HTTPException(400, "Unrecognized device MAC address")
-        if device_data.get("status") != "approved":
-            raise HTTPException(403, "Device is not approved for attendance")
+    # 3. Verify MAC address belongs to student and is approved
+    device_res = db.table("devices").select("mac, status").eq(
+        "student_id", user["sub"]
+    ).eq("mac", body.mac_address).maybe_single().execute()
+    device_data = safe_data(device_res)
+    
+    if not device_data:
+        raise HTTPException(400, "Unrecognized device MAC address")
+    if device_data.get("status") != "approved":
+        raise HTTPException(403, "Device is not approved for attendance")
 
-        # 4. Check if attendance already marked
-        existing = safe_data(
-            db.table("attendance_records").select("id").eq(
-                "session_id", body.session_id
-            ).eq("student_id", user["sub"]).maybe_single().execute()
-        )
-        if existing:
-            raise HTTPException(409, "Attendance already marked for this session")
+    # 4. Check if attendance already marked
+    existing = safe_data(
+        db.table("attendance_records").select("id").eq(
+            "session_id", body.session_id
+        ).eq("student_id", user["sub"]).maybe_single().execute()
+    )
+    if existing:
+        raise HTTPException(409, "Attendance already marked for this session")
 
         # Face verification logic
         if not getattr(body, "image_base64", None):
@@ -222,15 +226,7 @@ def mark_attendance(body: MarkAttendanceRequest, user: dict = Depends(student_on
             "frontend_mac": body.mac_address
         }).execute()
 
-        return {"message": "Attendance marked successfully"}
-
-    except HTTPException:
-        raise
-
-    except Exception as e:
-        import traceback
-        error_trace = traceback.format_exc()
-        raise HTTPException(status_code=400, detail=f"CRASH INTERNAL: {error_trace}")
+    return {"message": "Attendance marked successfully"}
 
 
 @router.post("/me/verify-2fa")
@@ -286,7 +282,7 @@ def get_my_active_session(user: dict = Depends(student_only)):
 
     # Get active sessions for those subjects
     sessions_res = db.table("sessions").select(
-        "id, started_at, subject_id, hotspot_ssid, faculty:faculty_id(name)"
+        "id, started_at, subject_id, beacon_id, faculty:faculty_id(name)"
     ).in_("subject_id", subject_ids).eq("active", True).execute()
     
     active_sessions = safe_data(sessions_res) or []
@@ -308,7 +304,7 @@ def get_my_active_session(user: dict = Depends(student_only)):
                 "subject_name": subject["name"] if subject else "Unknown",
                 "faculty_name": fac_name,
                 "started_at": sess["started_at"],
-                "hotspot_ssid": sess.get("hotspot_ssid"),
+                "beacon_id": sess.get("beacon_id"),
             }
             
     return None

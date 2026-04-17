@@ -14,7 +14,7 @@ class FacultyProfile(BaseModel):
 
 class SessionStart(BaseModel):
     subject_id: str
-    hotspot_ssid: Optional[str] = None   # Wi-Fi SSID for proximity verification
+    beacon_id: Optional[str] = None   # BLE beacon UUID for Bluetooth proximity verification
 
 
 class SessionOut(BaseModel):
