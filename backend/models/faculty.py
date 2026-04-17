@@ -14,8 +14,9 @@ class FacultyProfile(BaseModel):
 
 class SessionStart(BaseModel):
     subject_id: str
-    hotspot_ssid: Optional[str] = None    # Wi-Fi SSID for proximity verification
-    hotspot_bssid: Optional[str] = None   # Wi-Fi hotspot MAC address (BSSID) for proximity verification
+    hotspot_ssid: Optional[str] = None    # Wi-Fi SSID (legacy, kept for backward compat)
+    hotspot_bssid: Optional[str] = None   # Wi-Fi BSSID (legacy, kept for backward compat)
+    ble_rssi_threshold: int = -70         # BLE: minimum RSSI (dBm) for proximity verification
 
 
 class SessionOut(BaseModel):
@@ -38,6 +39,8 @@ class StudentAttendanceRow(BaseModel):
     name: str
     face_verified: bool
     mac_verified: bool
+    ble_verified: bool = False
+    ble_rssi: Optional[int] = None
     confidence: Optional[float] = None
     marked_at: Optional[str] = None
 

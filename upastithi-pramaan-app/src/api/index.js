@@ -101,10 +101,11 @@ export const facultyApi = {
   getProfile:         () => api.get('/faculty/me'),
   getSubjects:        () => api.get('/faculty/subjects'),
   getActiveSession:   () => api.get('/faculty/sessions/active'),
-  startSession:       (subjectId, hotspotSsid, hotspotBssid) => {
-    const body = { subject_id: subjectId };
-    if (hotspotSsid) body.hotspot_ssid = hotspotSsid;
-    if (hotspotBssid) body.hotspot_bssid = hotspotBssid;
+  startSession:       (subjectId, bleRssiThreshold = -70) => {
+    const body = {
+      subject_id: subjectId,
+      ble_rssi_threshold: bleRssiThreshold,
+    };
     return api.post('/faculty/sessions/start', body);
   },
   endSession:         (id) => api.post(`/faculty/sessions/${id}/end`),

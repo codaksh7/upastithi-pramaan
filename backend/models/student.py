@@ -30,11 +30,15 @@ class DeviceChangeRequest(BaseModel):
 
 class MarkAttendanceRequest(BaseModel):
     session_id: str
-    mac_address: str
+    mac_address: Optional[str] = None     # Legacy MAC-based verification (kept for backward compat)
     image_base64: Optional[str] = None
     twofa_code: Optional[str] = None
-    wifi_verified: bool = False
-    scanned_bssid: Optional[str] = None   # BSSID that the student's device matched during Wi-Fi scan
+    wifi_verified: bool = False           # Legacy WiFi verification
+    scanned_bssid: Optional[str] = None   # Legacy BSSID match
+    # ── BLE proximity verification fields ──
+    ble_token: Optional[str] = None       # Hex-encoded BLE token (36 chars)
+    ble_rssi: Optional[int] = None        # Signal strength at time of verification
+    ble_timestamp: Optional[int] = None   # Unix epoch from the BLE token
 
 
 class Verify2FARequest(BaseModel):

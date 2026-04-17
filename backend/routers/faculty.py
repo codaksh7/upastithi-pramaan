@@ -23,6 +23,7 @@ from datetime import datetime, timezone, timedelta
 from database import get_supabase, safe_data
 from dependencies import require_role
 from models.faculty import SessionStart, AttendanceOverride
+from utils.ble import generate_ble_secret, derive_service_uuid, BLE_DEFAULT_RSSI_THRESHOLD, BLE_DEFAULT_ROTATE_SECS
 
 router = APIRouter()
 faculty_only = require_role("faculty")
@@ -130,7 +131,26 @@ def start_session(body: SessionStart, user: dict = Depends(faculty_only)):
     if body.hotspot_bssid:
         insert_data["hotspot_bssid"] = body.hotspot_bssid
 
+    # ── BLE: Generate secret and service UUID ──
+    ble_secret = generate_ble_secret()
+    # We need to insert first to get the session_id, then derive the UUID
+    # So we'll set a placeholder and update after insert
+    insert_data["ble_secret"] = ble_secret
+    insert_data["ble_rssi_threshold"] = body.ble_rssi_threshold
+    insert_data["ble_token_rotate_secs"] = BLE_DEFAULT_ROTATE_SECS
+
     res = db.table("sessions").insert(insert_data).execute()
+
+    d = safe_data(res)
+    session_row = d[0] if d else None
+
+    # Derive BLE service UUID from the actual session_id and update the row
+    if session_row and session_row.get("id"):
+        ble_service_uuid = derive_service_uuid(session_row["id"])
+        db.table("sessions").update({
+            "ble_service_uuid": ble_service_uuid,
+        }).eq("id", session_row["id"]).execute()
+        session_row["ble_service_uuid"] = ble_service_uuid
 
     db.table("audit_logs").insert({
         "actor_id": user["sub"],
@@ -138,8 +158,7 @@ def start_session(body: SessionStart, user: dict = Depends(faculty_only)):
         "details":  f"subject_id={body.subject_id}",
     }).execute()
 
-    d = safe_data(res)
-    return d[0] if d else {"message": "Session started"}
+    return session_row if session_row else {"message": "Session started"}
 
 
 @router.post("/sessions/{session_id}/end")
@@ -204,7 +223,7 @@ def get_session_students(session_id: str, user: dict = Depends(faculty_only)):
 
     # 3. Fetch attendance records for this session
     att_res = db.table("attendance_records").select(
-        "student_id, face_verified, mac_verified, confidence, marked_at"
+        "student_id, face_verified, mac_verified, ble_verified, ble_rssi, confidence, marked_at"
     ).eq("session_id", session_id).execute()
     
     att_map = {r["student_id"]: r for r in (safe_data(att_res) or [])}
@@ -219,6 +238,8 @@ def get_session_students(session_id: str, user: dict = Depends(faculty_only)):
             "name":          stu.get("name"),
             "face_verified": rec.get("face_verified", False),
             "mac_verified":  rec.get("mac_verified", False),
+            "ble_verified":  rec.get("ble_verified", False),
+            "ble_rssi":      rec.get("ble_rssi"),
             "confidence":    rec.get("confidence"),
             "marked_at":     rec.get("marked_at"),
         })

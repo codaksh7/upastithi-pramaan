@@ -61,8 +61,12 @@ create table if not exists sessions (
   active                  boolean default true,
   twofa_code              text,                       -- rotating 6-digit 2FA code
   twofa_code_expires_at   timestamptz,                -- when the code expires (UTC)
-  hotspot_ssid            text,                       -- faculty Wi-Fi SSID for proximity check
-  hotspot_bssid           text,                       -- faculty Wi-Fi hotspot MAC address (BSSID) for proximity check
+  hotspot_ssid            text,                       -- faculty Wi-Fi SSID (legacy)
+  hotspot_bssid           text,                       -- faculty Wi-Fi BSSID (legacy)
+  ble_secret              text,                       -- HMAC secret for BLE token generation
+  ble_service_uuid        text,                       -- BLE service UUID for this session
+  ble_rssi_threshold      integer default -70,        -- min RSSI (dBm) for proximity
+  ble_token_rotate_secs   integer default 10,         -- token rotation interval
   created_at              timestamptz default now()
 );
 
@@ -73,10 +77,13 @@ create table if not exists attendance_records (
   student_id     uuid not null references students(id) on delete cascade,
   face_verified  boolean default false,
   mac_verified   boolean default false,
-  confidence     numeric(5,2),          -- face recognition confidence %
+  ble_verified   boolean default false,       -- BLE proximity verified
+  ble_rssi       integer,                     -- signal strength at time of marking
+  ble_token_hash text,                        -- SHA-256 of BLE token (anti-replay)
+  confidence     numeric(5,2),                -- face recognition confidence %
   marked_at      timestamptz,
   created_at     timestamptz default now(),
-  unique (session_id, student_id)       -- one record per student per session
+  unique (session_id, student_id)             -- one record per student per session
 );
 
 -- ── 7. DEVICES (MAC address registry) ────────────────────────────────────────

@@ -9,6 +9,7 @@ import io
 from database import get_supabase, safe_data
 from dependencies import require_role
 from models.student import DeviceChangeRequest, DisputeCreate, MarkAttendanceRequest, Verify2FARequest
+from utils.ble import validate_ble_token, hash_token
 from datetime import datetime, timezone
 
 router = APIRouter()
@@ -102,7 +103,7 @@ def mark_attendance(body: MarkAttendanceRequest, user: dict = Depends(student_on
     
     # 1. Verify session is active and fetch 2FA data
     session_res = db.table("sessions").select(
-        "id, active, twofa_code, twofa_code_expires_at, hotspot_ssid"
+        "id, active, twofa_code, twofa_code_expires_at, hotspot_ssid, hotspot_bssid, ble_secret, ble_rssi_threshold"
     ).eq("id", body.session_id).maybe_single().execute()
     session_data = safe_data(session_res)
     if not session_data:
@@ -110,17 +111,63 @@ def mark_attendance(body: MarkAttendanceRequest, user: dict = Depends(student_on
     if not session_data.get("active"):
         raise HTTPException(400, "Session is no longer active")
 
-    # 1b. Server-side Wi-Fi proximity enforcement via BSSID comparison
-    session_bssid = session_data.get("hotspot_bssid")
-    if session_bssid:
-        # If faculty stored a BSSID, student MUST send the matching scanned_bssid
-        if not body.scanned_bssid:
+    # 1b. Proximity verification — BLE token takes priority over WiFi
+    ble_secret = session_data.get("ble_secret")
+    ble_verified = False
+    ble_rssi_value = None
+    ble_token_hash_value = None
+
+    if body.ble_token and ble_secret:
+        # ── BLE token-based proximity verification ──
+        validation = validate_ble_token(
+            ble_secret=ble_secret,
+            session_id=body.session_id,
+            token_hex=body.ble_token,
+            max_age_secs=30,
+        )
+        if not validation["valid"]:
+            raise HTTPException(403, f"BLE proximity verification failed: {validation['error']}")
+
+        # Check RSSI threshold
+        rssi_threshold = session_data.get("ble_rssi_threshold", -70)
+        if body.ble_rssi is not None and body.ble_rssi < rssi_threshold:
+            raise HTTPException(
+                403,
+                f"BLE signal too weak (RSSI: {body.ble_rssi} dBm, required: ≥ {rssi_threshold} dBm). Move closer to the faculty."
+            )
+
+        # Anti-replay: check if this exact token was already used
+        ble_token_hash_value = validation["token_hash"]
+        replay_check = db.table("attendance_records").select("id").eq(
+            "ble_token_hash", ble_token_hash_value
+        ).limit(1).execute()
+        if replay_check.data:
+            raise HTTPException(403, "BLE token already used — possible replay attack. Wait for the next token rotation.")
+
+        ble_verified = True
+        ble_rssi_value = body.ble_rssi
+
+    elif ble_secret:
+        # BLE is configured but student didn't send a BLE token
+        # Check for legacy WiFi fallback
+        session_bssid = session_data.get("hotspot_bssid")
+        if session_bssid:
+            if not body.scanned_bssid:
+                raise HTTPException(403, "Proximity verification required. Enable Bluetooth and scan for the faculty's BLE beacon, or ensure you're in range of the faculty's hotspot.")
+            if body.scanned_bssid.upper() != session_bssid.upper():
+                raise HTTPException(403, "Wi-Fi BSSID mismatch. The scanned hotspot does not match the faculty's hotspot.")
+        elif not body.wifi_verified:
+            raise HTTPException(403, "BLE proximity verification is required. Enable Bluetooth and scan for the faculty's beacon.")
+    else:
+        # Legacy WiFi-only sessions (no BLE secret)
+        session_bssid = session_data.get("hotspot_bssid")
+        if session_bssid:
+            if not body.scanned_bssid:
+                raise HTTPException(403, "Wi-Fi proximity verification is required. You must be in range of the faculty's hotspot.")
+            if body.scanned_bssid.upper() != session_bssid.upper():
+                raise HTTPException(403, "Wi-Fi BSSID mismatch. The scanned hotspot does not match the faculty's hotspot.")
+        elif session_data.get("hotspot_ssid") and not body.wifi_verified:
             raise HTTPException(403, "Wi-Fi proximity verification is required. You must be in range of the faculty's hotspot.")
-        if body.scanned_bssid.upper() != session_bssid.upper():
-            raise HTTPException(403, "Wi-Fi BSSID mismatch. The scanned hotspot does not match the faculty's hotspot.")
-    elif session_data.get("hotspot_ssid") and not body.wifi_verified:
-        # Fallback: legacy SSID-only check
-        raise HTTPException(403, "Wi-Fi proximity verification is required. You must be in range of the faculty's hotspot.")
 
     # 2. Validate 2FA code
     stored_code = session_data.get("twofa_code")
@@ -136,16 +183,21 @@ def mark_attendance(body: MarkAttendanceRequest, user: dict = Depends(student_on
         if datetime.now(timezone.utc) > expires_at:
             raise HTTPException(403, "The 2FA code has expired. Ask your faculty for the new code.")
 
-    # 3. Verify MAC address belongs to student and is approved
-    device_res = db.table("devices").select("mac, status").eq(
-        "student_id", user["sub"]
-    ).eq("mac", body.mac_address).maybe_single().execute()
-    device_data = safe_data(device_res)
-    
-    if not device_data:
-        raise HTTPException(400, "Unrecognized device MAC address")
-    if device_data.get("status") != "approved":
-        raise HTTPException(403, "Device is not approved for attendance")
+    # 3. Device verification — skip MAC check if BLE verified (BLE replaces MAC)
+    if not ble_verified:
+        # Legacy MAC verification for non-BLE sessions
+        if body.mac_address:
+            device_res = db.table("devices").select("mac, status").eq(
+                "student_id", user["sub"]
+            ).eq("mac", body.mac_address).maybe_single().execute()
+            device_data = safe_data(device_res)
+            
+            if not device_data:
+                raise HTTPException(400, "Unrecognized device MAC address")
+            if device_data.get("status") != "approved":
+                raise HTTPException(403, "Device is not approved for attendance")
+        # If no MAC provided and no BLE, that's okay for BLE-configured sessions
+        # The proximity was already validated above
 
     # 4. Check if attendance already marked
     existing = safe_data(
@@ -173,14 +225,21 @@ def mark_attendance(body: MarkAttendanceRequest, user: dict = Depends(student_on
 
     # 5. Insert attendance record
     now_iso = datetime.now(timezone.utc).isoformat()
-    db.table("attendance_records").insert({
+    record_data = {
         "session_id": body.session_id,
         "student_id": user["sub"],
-        "mac_verified": True,
+        "mac_verified": True if body.mac_address else ble_verified,
         "face_verified": face_verified,
         "confidence": confidence,
-        "marked_at": now_iso
-    }).execute()
+        "marked_at": now_iso,
+        "ble_verified": ble_verified,
+    }
+    if ble_rssi_value is not None:
+        record_data["ble_rssi"] = ble_rssi_value
+    if ble_token_hash_value:
+        record_data["ble_token_hash"] = ble_token_hash_value
+
+    db.table("attendance_records").insert(record_data).execute()
 
     return {"message": "Attendance marked successfully"}
 
@@ -238,7 +297,7 @@ def get_my_active_session(user: dict = Depends(student_only)):
 
     # Get active sessions for those subjects
     sessions_res = db.table("sessions").select(
-        "id, started_at, subject_id, hotspot_ssid, hotspot_bssid, faculty:faculty_id(name)"
+        "id, started_at, subject_id, hotspot_ssid, hotspot_bssid, ble_service_uuid, ble_rssi_threshold, ble_token_rotate_secs, faculty:faculty_id(name)"
     ).in_("subject_id", subject_ids).eq("active", True).execute()
     
     active_sessions = safe_data(sessions_res) or []
@@ -262,6 +321,9 @@ def get_my_active_session(user: dict = Depends(student_only)):
                 "started_at": sess["started_at"],
                 "hotspot_ssid": sess.get("hotspot_ssid"),
                 "hotspot_bssid": sess.get("hotspot_bssid"),
+                "ble_service_uuid": sess.get("ble_service_uuid"),
+                "ble_rssi_threshold": sess.get("ble_rssi_threshold", -70),
+                "ble_token_rotate_secs": sess.get("ble_token_rotate_secs", 10),
             }
             
     return None

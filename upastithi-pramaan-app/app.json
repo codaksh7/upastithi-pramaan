@@ -31,15 +31,19 @@
       "permissions": [
         "CAMERA",
         "ACCESS_NETWORK_STATE",
-        "ACCESS_WIFI_STATE",
-        "CHANGE_WIFI_STATE",
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
+        "BLUETOOTH_SCAN",
+        "BLUETOOTH_ADVERTISE",
+        "BLUETOOTH_CONNECT",
         "INTERNET",
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE",
         "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT"
       ]
     },
     "web": {
@@ -55,15 +59,15 @@
       "expo-secure-store",
       "expo-document-picker",
       "@react-native-community/datetimepicker",
-      "./plugins/withWifiReborn",
-      "./plugins/withHotspotModule"
+      "react-native-ble-plx",
+      "./plugins/withBleAdvertiser"
     ],
     "scheme": "upastithi",
     "extra": {
       "eas": {
-        "projectId": "0109bed5-b764-48c5-b693-d8d8689f1d5b"
+        "projectId": "c7a73b99-e6d8-4abf-86bb-5b9c2b16f546"
       }
     },
-    "owner": "rodriguesmarvel26s-organization"
+    "owner": "rodriguesblaises-organizationr"
   }
 }
