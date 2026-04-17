@@ -10,7 +10,7 @@
       },
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://upastithi-ml-backend.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://upastithi-pramaan.onrender.com"
       }
     },
     "preview": {
