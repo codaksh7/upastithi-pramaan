@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 import io
 import random
+import uuid
 import string
 from datetime import datetime, timezone, timedelta
 
@@ -117,6 +118,9 @@ def start_session(body: SessionStart, user: dict = Depends(faculty_only)):
     code = _generate_code()
     expires_at = (datetime.now(timezone.utc) + timedelta(seconds=_CODE_TTL_SECONDS)).isoformat()
 
+    # Auto-generate BLE beacon UUID for Bluetooth proximity verification
+    beacon_id = body.beacon_id or str(uuid.uuid4())
+
     insert_data = {
         "subject_id":            body.subject_id,
         "faculty_id":            user["sub"],
@@ -124,9 +128,8 @@ def start_session(body: SessionStart, user: dict = Depends(faculty_only)):
         "active":                True,
         "twofa_code":            code,
         "twofa_code_expires_at": expires_at,
+        "beacon_id":             beacon_id,
     }
-    if body.hotspot_ssid:
-        insert_data["hotspot_ssid"] = body.hotspot_ssid
 
     res = db.table("sessions").insert(insert_data).execute()
 

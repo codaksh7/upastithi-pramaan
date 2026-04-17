@@ -4,7 +4,7 @@ import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import {
   Scan, Shield, Cpu, AlertTriangle, CheckCircle2, ArrowRight,
-  Eye, Wifi, Zap, BarChart3, Users, Download, Clock,
+  Eye, Bluetooth, Zap, BarChart3, Users, Download, Clock,
   Camera, Network, Database, Code2, Layers, Target, Globe,
   ChevronDown, Play
 } from 'lucide-react';
@@ -201,18 +201,18 @@ export default function LandingPage() {
     { icon: <Clock size={22} />, title: 'Wasted Time', desc: 'Manual roll call consumes 10–15 minutes per lecture — hours of lost instruction compounded across a semester.', color: 'var(--amber)' },
     { icon: <AlertTriangle size={22} />, title: 'Proxy Fraud', desc: 'A student hands their phone to a friend. Attendance marked. No verification. Zero accountability whatsoever.', color: 'var(--red)' },
     { icon: <Eye size={22} />, title: 'Photo Spoofing', desc: 'Facial recognition alone is trivially defeated by holding a photograph up to the camera. One layer is insufficient.', color: 'var(--red)' },
-    { icon: <Wifi size={22} />, title: 'Network Loopholes', desc: 'Device-only systems fail when a student leaves their phone inside the room while they skip the lecture entirely.', color: 'var(--amber)' },
+    { icon: <Bluetooth size={22} />, title: 'Range Loopholes', desc: 'Device-only systems fail when a student leaves their phone inside the room while they skip the lecture entirely.', color: 'var(--amber)' },
   ];
 
   const WORKFLOW = [
     { num: '01', icon: <Camera size={26} />, badge: 'Layer One', title: 'Face Detection', desc: 'HD webcam captures live room feed. OpenCV + HOG/CNN locates and identifies each face against the enrolled database in real time.', color: 'var(--cyan)' },
-    { num: '02', icon: <Wifi size={26} />, badge: 'Layer Two', title: 'Device Verification', desc: 'Faculty laptop creates a Wi-Fi Hotspot. ARP scan enumerates all connected MAC addresses and cross-checks the device registry.', color: 'var(--green)' },
+    { num: '02', icon: <Bluetooth size={26} />, badge: 'Layer Two', title: 'BLE Proximity Check', desc: 'Faculty device broadcasts a unique Bluetooth beacon. Student phones scan for this BLE signal to verify classroom proximity — no pairing needed.', color: 'var(--green)' },
     { num: '03', icon: <Shield size={26} />, badge: 'Final Gate', title: '2FA Validation', desc: 'Both checks evaluated atomically. Face Match AND MAC Present must both be TRUE. One failure means no attendance — ever.', color: 'var(--amber)' },
   ];
 
   const FEATURES = [
     { icon: <Camera size={19} />, title: 'Real-Time Face Recognition', desc: 'Live video stream processed frame-by-frame. Students are identified without stopping, queuing, or touching anything.', accent: 'var(--cyan)' },
-    { icon: <Wifi size={19} />, title: 'MAC Address Binding', desc: 'Each student account is permanently locked to their registered mobile device hardware ID. No sharing possible.', accent: 'var(--green)' },
+    { icon: <Bluetooth size={19} />, title: 'BLE Proximity Binding', desc: 'Students must be in Bluetooth range of the faculty beacon to verify attendance. No pairing or connection needed — just proximity.', accent: 'var(--green)' },
     { icon: <Shield size={19} />, title: 'Anti-Spoofing by Design', desc: 'A photo has no MAC address. A phone has no face. Both checks must pass simultaneously — by physical law.', accent: 'var(--cyan)' },
     { icon: <Zap size={19} />, title: 'Instant Faculty Dashboard', desc: 'Live attendance feed updates every few seconds. Faculty sees exactly who is present in real time during the session.', accent: 'var(--green)' },
     { icon: <BarChart3 size={19} />, title: 'Automated Defaulter Detection', desc: 'Students falling below 75% are automatically flagged and highlighted for immediate faculty intervention.', accent: 'var(--amber)' },
@@ -223,7 +223,7 @@ export default function LandingPage() {
     { name: 'Python 3.x', role: 'Core Engine', icon: <Code2 size={17} />, color: 'var(--cyan)' },
     { name: 'OpenCV', role: 'Video Processing', icon: <Camera size={17} />, color: 'var(--green)' },
     { name: 'face_recognition', role: 'Face Matching', icon: <Scan size={17} />, color: 'var(--cyan)' },
-    { name: 'Scapy / ARP', role: 'Network Scanning', icon: <Network size={17} />, color: 'var(--amber)' },
+    { name: 'BLE / Bluetooth', role: 'Proximity Check', icon: <Bluetooth size={17} />, color: 'var(--amber)' },
     { name: 'SQLite / MySQL', role: 'Data Storage', icon: <Database size={17} />, color: 'var(--green)' },
     { name: 'HOG + CNN', role: 'Face Detection', icon: <Layers size={17} />, color: 'var(--red)' },
     { name: 'Pandas', role: 'Report Generation', icon: <BarChart3 size={17} />, color: 'var(--cyan)' },
@@ -233,14 +233,14 @@ export default function LandingPage() {
   const TERMINAL_LINES = [
     'init attendance-engine --subject CS101 --div B',
     'webcam activated :: resolution 1920x1080 @ 30fps',
-    'hotspot scan :: 47 devices detected on subnet',
+    'BLE beacon broadcast :: faculty device active',
     'face detected :: querying enrollment db [62 records]',
     'MATCH :: Blaise Rodrigues | Roll 10275 | conf 97.3%',
-    'MAC verified :: A4:CF:99:12:BB:3E ✓',
+    'BLE proximity verified :: in range ✓',
     '2FA PASSED :: present logged [10:33:07 AM]',
     'face detected :: querying...',
     'MATCH :: Devansh Nayak | Roll 10268 | conf 94.1%',
-    'MAC verified ✓ :: PRESENT [10:33:22 AM]',
+    'BLE verified ✓ :: PRESENT [10:33:22 AM]',
   ];
 
   const TEAM = [
@@ -272,7 +272,7 @@ export default function LandingPage() {
                 </h1>
 
                 <p className="lp__hero-subtitle">
-                  <strong style={{ color: 'var(--cyan)', fontFamily: 'var(--font-display)', fontSize: '0.84rem', letterSpacing: '0.05em' }}>Upastithi-Pramaan</strong> — a dual-layer authentication system cross-referencing <em style={{ color: 'var(--green)' }}>AI Facial Recognition</em> with <em style={{ color: 'var(--cyan)' }}>Wi-Fi Device Verification</em> to make proxy attendance physically impossible.
+                  <strong style={{ color: 'var(--cyan)', fontFamily: 'var(--font-display)', fontSize: '0.84rem', letterSpacing: '0.05em' }}>Upastithi-Pramaan</strong> — a multi-layer authentication system cross-referencing <em style={{ color: 'var(--green)' }}>AI Facial Recognition</em> with <em style={{ color: 'var(--cyan)' }}>Bluetooth Proximity Verification</em> to make proxy attendance physically impossible.
                 </p>
 
                 <div className="lp__hero-ctas">
@@ -285,7 +285,7 @@ export default function LandingPage() {
                 </div>
 
                 <div className="lp__hero-tags">
-                  {['Computer Vision', 'Network Security', 'Machine Learning', '2FA Protocol'].map((t, i) => (
+                  {['Computer Vision', 'BLE Proximity', 'Machine Learning', '2FA Protocol'].map((t, i) => (
                     <span key={i} className="lp__hero-tag">{t}</span>
                   ))}
                 </div>
@@ -297,7 +297,7 @@ export default function LandingPage() {
                 <div className="lp__logic-box">
                   <div className="lp__logic-comment">{"// VALIDATION LOGIC"}</div>
                   <div><span style={{ color: 'var(--amber)' }}>IF</span> <span style={{ color: 'var(--cyan)' }}>(faceRecognized)</span></div>
-                  <div style={{ paddingLeft: 16 }}><span style={{ color: 'var(--amber)' }}>AND</span> <span style={{ color: 'var(--cyan)' }}>(macAddressDetected)</span></div>
+                  <div style={{ paddingLeft: 16 }}><span style={{ color: 'var(--amber)' }}>AND</span> <span style={{ color: 'var(--cyan)' }}>(bleProximityVerified)</span></div>
                   <div><span style={{ color: 'var(--amber)' }}>THEN</span> → <span style={{ color: 'var(--green)' }}>MARK PRESENT ✅</span></div>
                   <div><span style={{ color: 'var(--amber)' }}>ELSE</span> → <span style={{ color: 'var(--red)' }}>FLAG ABSENT ❌</span></div>
                 </div>
@@ -367,7 +367,7 @@ export default function LandingPage() {
           <div className="lp__workflow-footer">
             <CheckCircle2 size={13} color="var(--cyan)" /><span>Face Match</span>
             <span>+</span>
-            <CheckCircle2 size={13} color="var(--green)" /><span>MAC Present</span>
+            <CheckCircle2 size={13} color="var(--green)" /><span>BLE Verified</span>
             <ArrowRight size={13} /><span style={{ color: 'var(--green)' }}>Attendance Logged</span>
           </div>
         </div>

@@ -100,7 +100,7 @@ export default function AdminOverviewScreen() {
           {[
             {label:'Face Confidence Threshold', val:'70%',         icon:'scan-circle'},
             {label:'Defaulter Threshold',       val:'< 75%',       icon:'warning'},
-            {label:'ARP Scan Interval',         val:'3-5 seconds', icon:'wifi'},
+            {label:'BLE Scan Range',            val:'~10-15m',     icon:'bluetooth'},
             {label:'Face Model',                val:'HOG + CNN',   icon:'hardware-chip'},
             {label:'2FA Code TTL',              val:'5 minutes',   icon:'key'},
             {label:'JWT Expiry',                val:'4 hours',     icon:'time'},

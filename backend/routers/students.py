@@ -102,7 +102,7 @@ def mark_attendance(body: MarkAttendanceRequest, user: dict = Depends(student_on
     
     # 1. Verify session is active and fetch 2FA data
     session_res = db.table("sessions").select(
-        "id, active, twofa_code, twofa_code_expires_at, hotspot_ssid"
+        "id, active, twofa_code, twofa_code_expires_at, beacon_id"
     ).eq("id", body.session_id).maybe_single().execute()
     session_data = safe_data(session_res)
     if not session_data:
@@ -110,10 +110,14 @@ def mark_attendance(body: MarkAttendanceRequest, user: dict = Depends(student_on
     if not session_data.get("active"):
         raise HTTPException(400, "Session is no longer active")
 
-    # 1b. Server-side Wi-Fi proximity enforcement
-    # If faculty configured a hotspot SSID, the student app MUST have verified Wi-Fi proximity
-    if session_data.get("hotspot_ssid") and not body.wifi_verified:
-        raise HTTPException(403, "Wi-Fi proximity verification is required. You must be in range of the faculty's hotspot.")
+    # 1b. Server-side Bluetooth BLE proximity enforcement
+    # If session has a beacon_id, the student must have detected it via BLE scan
+    session_beacon = session_data.get("beacon_id")
+    if session_beacon:
+        if not body.bluetooth_verified:
+            raise HTTPException(403, "Bluetooth proximity verification is required. You must be in BLE range of the faculty's beacon.")
+        if body.detected_beacon_id and body.detected_beacon_id != session_beacon:
+            raise HTTPException(403, "Bluetooth beacon mismatch. The detected beacon does not match this session.")
 
     # 2. Validate 2FA code
     stored_code = session_data.get("twofa_code")
@@ -231,7 +235,7 @@ def get_my_active_session(user: dict = Depends(student_only)):
 
     # Get active sessions for those subjects
     sessions_res = db.table("sessions").select(
-        "id, started_at, subject_id, hotspot_ssid, faculty:faculty_id(name)"
+        "id, started_at, subject_id, beacon_id, faculty:faculty_id(name)"
     ).in_("subject_id", subject_ids).eq("active", True).execute()
     
     active_sessions = safe_data(sessions_res) or []
@@ -253,7 +257,7 @@ def get_my_active_session(user: dict = Depends(student_only)):
                 "subject_name": subject["name"] if subject else "Unknown",
                 "faculty_name": fac_name,
                 "started_at": sess["started_at"],
-                "hotspot_ssid": sess.get("hotspot_ssid"),
+                "beacon_id": sess.get("beacon_id"),
             }
             
     return None

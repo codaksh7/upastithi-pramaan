@@ -4,7 +4,7 @@ import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import {
   Scan, Shield, Target, Cpu, Camera, Database,
-  Network, Layers, Code2, Globe, BarChart3, Users,
+  Bluetooth, Layers, Code2, Globe, BarChart3, Users,
   BookOpen, Lightbulb, Play
 } from 'lucide-react';
 import './About.css';
@@ -22,7 +22,7 @@ const TECH_DEEP = [
   {
     name: 'Python 3.x', role: 'Core Engine', color: 'var(--cyan)',
     icon: <Code2 size={20} />,
-    desc: 'The backbone of the entire system. Python orchestrates all modules — face recognition pipeline, ARP network scanning, SQLite database operations, and session management. Chosen for its rich ecosystem of ML and networking libraries.',
+    desc: 'The backbone of the entire system. Python orchestrates all modules — face recognition pipeline, BLE proximity verification, Supabase database operations, and session management. Chosen for its rich ecosystem of ML libraries and rapid development capability.',
     tags: ['v3.10+', 'subprocess', 'threading', 'logging'],
   },
   {
@@ -38,10 +38,10 @@ const TECH_DEEP = [
     tags: ['dlib', 'ResNet', '128-dim', 'Euclidean'],
   },
   {
-    name: 'Scapy / ARP', role: 'Network Scanning', color: 'var(--amber)',
-    icon: <Network size={20} />,
-    desc: 'Sends ARP broadcast packets across the local subnet created by the faculty hotspot. Collects all responding MAC addresses in real time. The resulting list is matched against the student device registry for the second verification layer.',
-    tags: ['ARP', 'Layer 2', 'Scapy', 'subprocess'],
+    name: 'BLE / Bluetooth', role: 'Proximity Verification', color: 'var(--amber)',
+    icon: <Bluetooth size={20} />,
+    desc: 'Bluetooth Low Energy (BLE) is used for proximity-based attendance verification. The faculty device broadcasts a unique beacon UUID, and student phones scan for this signal to confirm they are physically present in the classroom — no pairing or connection needed.',
+    tags: ['BLE', 'Beacon', 'RSSI', 'react-native-ble-plx'],
   },
   {
     name: 'SQLite / MySQL', role: 'Data Storage', color: 'var(--green)',
@@ -70,11 +70,11 @@ const TECH_DEEP = [
 ];
 
 const METHODOLOGY = [
-  { title: 'Session Initiation', desc: 'Faculty starts a session from the dashboard, selects the subject, and activates the laptop Wi-Fi hotspot. The system logs the session start time and begins monitoring.' },
-  { title: 'Network Scan', desc: 'Scapy performs an ARP broadcast scan of the hotspot subnet every few seconds, collecting all MAC addresses of connected devices. Results are continuously updated in memory.' },
+  { title: 'Session Initiation', desc: 'Faculty starts a session from the dashboard and selects the subject. The system auto-generates a unique BLE beacon UUID, logs the session start time, and begins broadcasting the Bluetooth proximity signal.' },
+  { title: 'BLE Proximity Scan', desc: 'Student devices scan for nearby Bluetooth Low Energy signals. The app detects the faculty beacon within ~10-15 meter range and verifies the beacon UUID matches the active session, confirming physical presence.' },
   { title: 'Face Detection', desc: 'OpenCV captures live frames from the connected webcam. Each frame is processed to locate all faces using the selected model (HOG or CNN). Detected regions are passed to the encoder.' },
   { title: 'Face Recognition', desc: 'For each detected face, a 128-dimension encoding is computed and compared against all enrolled student encodings. Matches within the configured tolerance threshold are identified.' },
-  { title: '2FA Cross-Validation', desc: 'The system checks whether the recognized student\'s registered MAC address is present in the current ARP scan results. Both face AND MAC must be confirmed simultaneously.' },
+  { title: '2FA Cross-Validation', desc: 'The system checks whether the recognized student\'s BLE proximity has been verified and their device is registered. Face recognition, BLE proximity, and 2FA code must all be confirmed simultaneously.' },
   { title: 'Attendance Logging', desc: 'On a successful dual-layer match, the attendance record is written to the database with a timestamp, confidence score, and session ID. Manual overrides by faculty are also logged with reason.' },
   { title: 'Session End & Reporting', desc: 'Faculty ends the session. The system calculates final attendance percentages, flags defaulters below 75%, and makes the session report available for download in CSV, Excel, or PDF format.' },
 ];
@@ -126,10 +126,10 @@ export default function About() {
                   <span className="g-gradient-text" style={{ display: 'block' }}>PRAMAAN</span>
                 </h1>
                 <p className="ab__hero-sub">
-                  A smart, automated attendance system that cross-references real-time facial recognition with Wi-Fi-based device authentication — making proxy attendance physically and technically impossible.
+                  A smart, automated attendance system that cross-references real-time facial recognition with Bluetooth proximity verification — making proxy attendance physically and technically impossible.
                 </p>
                 <div className="ab__hero-tags">
-                  {['SDG 4', 'SDG 9', 'Computer Vision', 'Network Security', '2FA', 'Python'].map((t, i) => (
+                  {['SDG 4', 'SDG 9', 'Computer Vision', 'BLE Proximity', '2FA', 'Python'].map((t, i) => (
                     <span key={i} className="ab__hero-tag">{t}</span>
                   ))}
                 </div>
@@ -165,7 +165,7 @@ export default function About() {
             {[
               {
                 icon: <BookOpen size={22} />, color: 'var(--cyan)', title: 'Abstract',
-                text: 'Traditional attendance methods — manual roll calls and basic QR or biometric systems — are vulnerable to proxy fraud, consume valuable lecture time, and generate errors in record-keeping. Upastithi-Pramaan addresses all three by automating attendance through simultaneous facial recognition and Wi-Fi device verification, requiring both to be satisfied before any attendance record is accepted.',
+                text: 'Traditional attendance methods — manual roll calls and basic QR or biometric systems — are vulnerable to proxy fraud, consume valuable lecture time, and generate errors in record-keeping. Upastithi-Pramaan addresses all three by automating attendance through simultaneous facial recognition and Bluetooth proximity verification, requiring both to be satisfied before any attendance record is accepted.',
               },
               {
                 icon: <Target size={22} />, color: 'var(--green)', title: 'Problem Statement',
@@ -173,7 +173,7 @@ export default function About() {
               },
               {
                 icon: <Lightbulb size={22} />, color: 'var(--amber)', title: 'Aims & Objectives',
-                text: 'To build a dual-layer attendance system that: (1) identifies students from live video using state-of-the-art face recognition, (2) verifies physical device presence via Wi-Fi MAC address matching, (3) cross-validates both layers simultaneously, (4) provides real-time dashboards for faculty, and (5) automates report generation and defaulter detection — all without additional hardware.',
+                text: 'To build a multi-layer attendance system that: (1) identifies students from live video using state-of-the-art face recognition, (2) verifies physical presence via Bluetooth Low Energy proximity scanning, (3) cross-validates all layers simultaneously with 2FA, (4) provides real-time dashboards for faculty, and (5) automates report generation and defaulter detection — all using just existing phones and a laptop.',
               },
               {
                 icon: <Shield size={22} />, color: 'var(--red)', title: 'Why Two Layers?',
@@ -266,7 +266,7 @@ export default function About() {
               {
                 sdg: 'SDG 9', full: 'Industry, Innovation & Infrastructure', color: 'var(--cyan)',
                 icon: <Cpu size={22} />,
-                desc: 'Deploying production-grade AI (HOG/CNN face recognition) and IoT-class network security (ARP-based MAC verification) within institutional infrastructure demonstrates that modern technology can solve real institutional problems at near-zero cost.',
+                desc: 'Deploying production-grade AI (HOG/CNN face recognition) and BLE-based proximity verification within institutional infrastructure demonstrates that modern technology can solve real institutional problems at near-zero cost.',
                 points: [
                   'Leverages existing hardware — no additional sensors or scanners needed',
                   'Open-source libraries make the system reproducible and adaptable',

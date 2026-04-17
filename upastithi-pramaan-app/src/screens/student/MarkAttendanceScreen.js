@@ -1,18 +1,25 @@
 // src/screens/student/MarkAttendanceScreen.js
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Dimensions, Platform, PermissionsAndroid, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Dimensions, Platform, PermissionsAndroid, ActivityIndicator, Animated, Easing } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import WifiManager from 'react-native-wifi-reborn';
+import { BleManager } from 'react-native-ble-plx';
 import { studentApi } from '../../api';
 import Background from '../../components/Background';
 import { GlowCard, Badge, CyberButton, PulseDot } from '../../components/UI';
 import { Colors, Spacing } from '../../utils/theme';
 
 const { width: W, height: H } = Dimensions.get('window');
-const STEPS = ['SCAN_FACE','WIFI_CHECK','VERIFY_2FA','SUBMIT'];
+const STEPS = ['SCAN_FACE','BLE_CHECK','VERIFY_2FA','SUBMIT'];
+
+// Singleton BLE manager
+let bleManagerInstance = null;
+function getBleManager() {
+  if (!bleManagerInstance) bleManagerInstance = new BleManager();
+  return bleManagerInstance;
+}
 
 export default function MarkAttendanceScreen({ route, navigation }) {
   const session = route?.params?.session;
@@ -27,15 +34,17 @@ export default function MarkAttendanceScreen({ route, navigation }) {
   const [cameraReady, setCameraReady] = useState(false);
   const MAC = 'AA:BB:CC:DD:EE:FF'; // RN: actual MAC needs native module
 
-  // Wi-Fi scan state
-  const [wifiScanning,   setWifiScanning]   = useState(false);
-  const [wifiVerified,   setWifiVerified]   = useState(false);
-  const [scannedNetworks,setScannedNetworks]= useState([]);
+  // BLE scan state
+  const [bleScanning,     setBleScanning]     = useState(false);
+  const [bleVerified,     setBleVerified]     = useState(false);
+  const [detectedDevices, setDetectedDevices] = useState([]);
+  const [bleStatus,       setBleStatus]       = useState('READY');
+  const scanAnimation = useRef(new Animated.Value(0)).current;
 
-  // Auto-start Wi-Fi check when step reaches WIFI_CHECK
+  // Auto-start BLE check when step reaches BLE_CHECK
   useEffect(() => {
-    if (step === 'WIFI_CHECK' && session?.hotspot_ssid && !wifiVerified && !wifiScanning) {
-      scanWifi();
+    if (step === 'BLE_CHECK' && session?.beacon_id && !bleVerified && !bleScanning) {
+      scanBLE();
     }
   }, [step]);
 
@@ -44,37 +53,175 @@ export default function MarkAttendanceScreen({ route, navigation }) {
     if (step !== 'SCAN_FACE') setCameraReady(false);
   }, [step]);
 
-  const requestLocationPermission = async () => {
+  // Cleanup BLE on unmount
+  useEffect(() => {
+    return () => {
+      try {
+        const mgr = getBleManager();
+        mgr.stopDeviceScan();
+      } catch(e) {}
+    };
+  }, []);
+
+  // Pulse animation for scanning
+  useEffect(() => {
+    if (bleScanning) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(scanAnimation, { toValue: 1, duration: 1500, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          Animated.timing(scanAnimation, { toValue: 0, duration: 1500, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        ])
+      ).start();
+    } else {
+      scanAnimation.setValue(0);
+    }
+  }, [bleScanning]);
+
+  const requestBLEPermissions = async () => {
     if (Platform.OS === 'android') {
-      const granted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-        {
-          title: 'Location Permission Required',
-          message: 'Upastithi needs location access to scan nearby Wi-Fi networks for proximity verification.',
-          buttonPositive: 'Allow',
-          buttonNegative: 'Deny',
-        }
-      );
-      return granted === PermissionsAndroid.RESULTS.GRANTED;
+      const apiLevel = Platform.Version;
+      if (apiLevel >= 31) {
+        // Android 12+
+        const results = await PermissionsAndroid.requestMultiple([
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+        ]);
+        return Object.values(results).every(r => r === PermissionsAndroid.RESULTS.GRANTED);
+      } else {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+          {
+            title: 'Location Permission Required',
+            message: 'Upastithi needs location access to scan nearby Bluetooth devices for proximity verification.',
+            buttonPositive: 'Allow',
+            buttonNegative: 'Deny',
+          }
+        );
+        return granted === PermissionsAndroid.RESULTS.GRANTED;
+      }
     }
     return true;
   };
 
-  const scanWifi = async () => {
-    setWifiScanning(true);
+  const scanBLE = async () => {
+    setBleScanning(true);
+    setBleStatus('REQUESTING PERMISSIONS...');
     setError('');
+    setDetectedDevices([]);
+
     try {
-      // Auto-pass Wi-Fi for testing as requested
+      const permGranted = await requestBLEPermissions();
+      if (!permGranted) {
+        setError('Bluetooth permissions denied — Please grant Bluetooth and Location permissions to verify proximity.');
+        setBleScanning(false);
+        setBleStatus('PERMISSION DENIED');
+        return;
+      }
+
+      const manager = getBleManager();
+
+      // Check if Bluetooth is powered on, natively prompt if OFF (Android only)
+      let state = await manager.state();
+      if (state !== 'PoweredOn') {
+        if (Platform.OS === 'android') {
+          try { await manager.enable(); } catch(err) {}
+          // Wait up to 5 seconds for the hardware radio to truly turn on
+          let turnedOn = false;
+          for(let i=0; i<10; i++) {
+            await new Promise(r => setTimeout(r, 500));
+            if ((await manager.state()) === 'PoweredOn') { turnedOn = true; break; }
+          }
+          if (!turnedOn) {
+            setError('Bluetooth is OFF — Please explicitly turn on Bluetooth in your device settings.');
+            setBleScanning(false);
+            setBleStatus('BLUETOOTH OFF');
+            return;
+          }
+        } else {
+          setError('Bluetooth is OFF — Please turn on Bluetooth in your device settings.');
+          setBleScanning(false);
+          setBleStatus('BLUETOOTH OFF');
+          return;
+        }
+      }
+
+      setBleStatus('SCANNING NEARBY DEVICES...');
+      const discoveredDevices = [];
+      let foundBeacon = false;
+
+      // Start scanning for nearby BLE devices
+      manager.startDeviceScan(null, { allowDuplicates: false }, (scanError, device) => {
+        if (scanError) {
+          console.warn('BLE scan error:', scanError);
+          return;
+        }
+        if (device) {
+          // Check if this device matches our beacon (by name or service UUID)
+          const deviceInfo = {
+            id: device.id,
+            name: device.name || device.localName || '(Unknown)',
+            rssi: device.rssi,
+          };
+
+          // Avoid duplicate entries
+          const exists = discoveredDevices.find(d => d.id === device.id);
+          if (!exists) {
+            discoveredDevices.push(deviceInfo);
+            setDetectedDevices([...discoveredDevices]);
+          }
+
+          // Environmental Signature matching: Check if this device matches any in the classroom signature
+          const beaconId = session?.beacon_id || '';
+          if (beaconId.startsWith('ENV:')) {
+            const signatureMacs = beaconId.replace('ENV:', '').split('|');
+            if (signatureMacs.includes(device.id)) {
+              foundBeacon = true;
+            }
+          } else {
+            // Legacy check (just in case they use older sessions)
+            const deviceName = (device.name || device.localName || '').toLowerCase();
+            const serviceUUIDs = (device.serviceUUIDs || []).map(u => u.toLowerCase());
+            
+            if (deviceName.includes(beaconId.toLowerCase().slice(0, 8)) || 
+                serviceUUIDs.some(uuid => uuid.includes(beaconId.toLowerCase())) ||
+                deviceName.includes('upastithi')) {
+              foundBeacon = true;
+            }
+          }
+        }
+      });
+
+      // Scan for 8 seconds then evaluate results
       setTimeout(() => {
-        setWifiVerified(true);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        setStep('VERIFY_2FA');
-        setWifiScanning(false);
-      }, 800);
+        manager.stopDeviceScan();
+        setBleScanning(false);
+
+        if (foundBeacon) {
+          // Strict verification: Teacher's beacon detected
+          setBleVerified(true);
+          setBleStatus('IN RANGE — BEACON VERIFIED ✓');
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          
+          // Auto-advance to next step after brief pause
+          setTimeout(() => setStep('VERIFY_2FA'), 1000);
+        } else if (discoveredDevices.length > 0) {
+          // Devices found but not a match for the classroom environment
+          setBleStatus('ENVIRONMENT MISMATCH');
+          setError('Scanning finished... I see Bluetooth devices but you do not appear to be in the same room as the faculty. Move closer exactly to the teacher.');
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        } else {
+          setBleStatus('NO DEVICES FOUND');
+          setError('No Bluetooth devices detected — Make sure you are in the classroom with Bluetooth enabled.');
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        }
+      }, 8000);
+
     } catch (e) {
-      console.warn('Wi-Fi scan error:', e);
-      setError('Wi-Fi scan failed — Could not scan nearby networks. Ensure Wi-Fi and Location services are enabled on your device.');
-      setWifiScanning(false);
+      console.warn('BLE scan error:', e);
+      setError('Bluetooth scan failed — Ensure Bluetooth is enabled on your device. Error: ' + (e.message || 'Unknown error'));
+      setBleScanning(false);
+      setBleStatus('SCAN FAILED');
     }
   };
 
@@ -103,14 +250,14 @@ export default function MarkAttendanceScreen({ route, navigation }) {
       setTimeout(() => {
         setCapturedImg('FACE_SCAN_AUTO_PASSED');
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        setStep('WIFI_CHECK');
+        setStep('BLE_CHECK');
         setLoading(false);
       }, 500);
     } catch(e) {
       console.warn('Camera capture error:', e);
       setCapturedImg('FACE_SCAN_AUTO_PASSED');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setStep('WIFI_CHECK');
+      setStep('BLE_CHECK');
       setLoading(false);
     }
   };
@@ -118,7 +265,14 @@ export default function MarkAttendanceScreen({ route, navigation }) {
   const submitAttendance = async () => {
     setLoading(true); setError('');
     try {
-      await studentApi.markAttendance({ session_id:session.session_id, mac_address:MAC, twofa_code:twoFaCode, image_base64:capturedImg, wifi_verified:wifiVerified });
+      await studentApi.markAttendance({
+        session_id: session.session_id,
+        mac_address: MAC,
+        twofa_code: twoFaCode,
+        image_base64: capturedImg,
+        bluetooth_verified: bleVerified,
+        detected_beacon_id: session?.beacon_id || null,
+      });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setSuccess(true);
     } catch(e) {
@@ -127,9 +281,9 @@ export default function MarkAttendanceScreen({ route, navigation }) {
       if (msg.includes('2fa') || msg.includes('invalid') && msg.includes('code') || msg.includes('expired')) {
         userError = '6-digit code incorrect — The code you entered does not match or has expired. Ask your faculty for the current code.';
         setStep('VERIFY_2FA');
-      } else if (msg.includes('wi-fi') || msg.includes('proximity') || msg.includes('hotspot')) {
-        userError = 'Wi-Fi proximity check failed — You must be in range of the faculty\'s hotspot to mark attendance.';
-        setStep('WIFI_CHECK');
+      } else if (msg.includes('bluetooth') || msg.includes('proximity') || msg.includes('beacon') || msg.includes('ble')) {
+        userError = 'Bluetooth proximity check failed — You must be in BLE range of the faculty\'s beacon to mark attendance.';
+        setStep('BLE_CHECK');
       } else if (msg.includes('face') || msg.includes('verification failed')) {
         userError = 'Face scan failed — Face could not be verified. Please try again with better lighting.';
         setStep('SCAN_FACE');
@@ -159,12 +313,15 @@ export default function MarkAttendanceScreen({ route, navigation }) {
         <GlowCard color="green" style={{marginTop:28,width:'100%'}}>
           <Text style={s.successDetail}>Session: {session?.subject_code}</Text>
           <Text style={s.successDetail}>Subject: {session?.subject_name}</Text>
-          <Text style={s.successDetail}>Verification: Wi-Fi ✓ + 2FA ✓ + Face ✓ + MAC ✓</Text>
+          <Text style={s.successDetail}>Verification: BLE ✓ + 2FA ✓ + Face ✓ + MAC ✓</Text>
         </GlowCard>
         <CyberButton label="Back to Dashboard" color="green" onPress={()=>navigation.goBack()} style={{marginTop:22,width:'100%'}}/>
       </View>
     </SafeAreaView>
   );
+
+  const scanScale = scanAnimation.interpolate({ inputRange: [0, 1], outputRange: [1, 1.15] });
+  const scanOpacity = scanAnimation.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.6, 1, 0.6] });
 
   return (
     <SafeAreaView style={s.safe}>
@@ -191,7 +348,7 @@ export default function MarkAttendanceScreen({ route, navigation }) {
 
       {/* Step indicators */}
       <View style={s.stepRow}>
-        {[{key:'SCAN_FACE',label:'FACE',n:1},{key:'WIFI_CHECK',label:'WIFI',n:2},{key:'VERIFY_2FA',label:'2FA',n:3},{key:'SUBMIT',label:'SUBMIT',n:4}].map((st,i)=>{
+        {[{key:'SCAN_FACE',label:'FACE',n:1},{key:'BLE_CHECK',label:'BLE',n:2},{key:'VERIFY_2FA',label:'2FA',n:3},{key:'SUBMIT',label:'SUBMIT',n:4}].map((st,i)=>{
           const done=STEPS.indexOf(step)>i; const cur=step===st.key;
           return (
             <React.Fragment key={st.key}>
@@ -208,66 +365,67 @@ export default function MarkAttendanceScreen({ route, navigation }) {
       </View>
 
       <ScrollView style={{flex:1}} contentContainerStyle={s.content}>
-        {/* ── Step 0: Wi-Fi Proximity Check ── */}
-        {step==='WIFI_CHECK'&&(
+        {/* ── Step 1: Bluetooth Proximity Check ── */}
+        {step==='BLE_CHECK'&&(
           <View>
-            <Text style={s.stepTitle}>WI-FI PROXIMITY CHECK</Text>
+            <Text style={s.stepTitle}>BLUETOOTH PROXIMITY CHECK</Text>
             <Text style={s.stepDesc}>
-              {session?.hotspot_ssid
-                ? `Scanning for faculty hotspot "${session.hotspot_ssid}" to verify you are in the classroom.`
-                : 'No hotspot configured for this session. Skipping proximity check...'}
+              {session?.beacon_id
+                ? 'Scanning for nearby Bluetooth devices to verify you are in the classroom.'
+                : 'No beacon configured for this session. Skipping proximity check...'}
             </Text>
 
-            <GlowCard color="cyan" style={s.wifiCard}>
-              <View style={s.wifiIconWrap}>
-                {wifiScanning ? (
-                  <ActivityIndicator size="large" color={Colors.cyan}/>
-                ) : wifiVerified ? (
+            <GlowCard color="cyan" style={s.bleCard}>
+              <View style={s.bleIconWrap}>
+                {bleScanning ? (
+                  <Animated.View style={{ transform: [{ scale: scanScale }], opacity: scanOpacity }}>
+                    <Ionicons name="bluetooth" size={56} color={Colors.cyan}/>
+                  </Animated.View>
+                ) : bleVerified ? (
                   <Ionicons name="checkmark-circle" size={56} color={Colors.green}/>
                 ) : (
-                  <Ionicons name="wifi" size={56} color={error ? Colors.red : Colors.cyan}/>
+                  <Ionicons name="bluetooth" size={56} color={error ? Colors.red : Colors.cyan}/>
                 )}
               </View>
 
-              <Text style={[s.wifiStatus, wifiVerified && {color: Colors.green}, error && {color: Colors.red}]}>
-                {wifiScanning ? 'SCANNING NEARBY NETWORKS...' : wifiVerified ? 'IN RANGE — VERIFIED ✓' : error ? 'NOT IN RANGE' : 'READY TO SCAN'}
+              <Text style={[s.bleStatus, bleVerified && {color: Colors.green}, error && {color: Colors.red}]}>
+                {bleScanning ? bleStatus : bleVerified ? 'IN RANGE — VERIFIED ✓' : error ? 'SCAN FAILED' : 'READY TO SCAN'}
               </Text>
 
-              {session?.hotspot_ssid && (
-                <View style={s.ssidTarget}>
+              {session?.beacon_id && (
+                <View style={s.beaconTarget}>
                   <Ionicons name="radio" size={11} color={Colors.cyan}/>
-                  <Text style={s.ssidTargetText}>Target: {session.hotspot_ssid}</Text>
+                  <Text style={s.beaconTargetText}>Beacon: {session.beacon_id.slice(0,8)}...</Text>
                 </View>
               )}
 
-              {scannedNetworks.length > 0 && !wifiVerified && (
-                <View style={s.networkList}>
-                  <Text style={s.networkListTitle}>DETECTED NETWORKS ({scannedNetworks.length})</Text>
-                  {scannedNetworks.slice(0, 8).map((net, i) => (
-                    <View key={i} style={s.networkItem}>
-                      <Ionicons name="wifi" size={10} color={Colors.textDim}/>
-                      <Text style={s.networkName} numberOfLines={1}>{net.SSID || '(Hidden)'}</Text>
-                      <Text style={s.networkSignal}>{net.level}dBm</Text>
-                    </View>
-                  ))}
-                  {scannedNetworks.length > 8 && (
-                    <Text style={s.networkMore}>+{scannedNetworks.length - 8} more networks</Text>
-                  )}
+              {detectedDevices.length > 0 && (
+                <View style={s.deviceList}>
+                  <Text style={s.deviceListTitle}>DETECTED DEVICES ({detectedDevices.length})</Text>
+                  <ScrollView style={{maxHeight: 120}} nestedScrollEnabled={true}>
+                    {detectedDevices.map((dev, i) => (
+                      <View key={i} style={s.deviceItem}>
+                        <Ionicons name="bluetooth" size={10} color={Colors.textDim}/>
+                        <Text style={s.deviceName} numberOfLines={1}>{dev.name}</Text>
+                        <Text style={s.deviceSignal}>{dev.rssi}dBm</Text>
+                      </View>
+                    ))}
+                  </ScrollView>
                 </View>
               )}
             </GlowCard>
 
             {error?<Text style={s.errText}>{error}</Text>:null}
 
-            {!wifiVerified && !wifiScanning && (
-              <CyberButton label="Scan Again" color="cyan" onPress={scanWifi} style={{marginTop:14}}/>
+            {!bleVerified && !bleScanning && (
+              <CyberButton label="Scan Again" color="cyan" onPress={scanBLE} style={{marginTop:14}}/>
             )}
 
-            {/* Remove skip button -> Mandatory Wi-Fi checking */}
+            {/* No skip button → Mandatory BLE checking */}
           </View>
         )}
 
-        {/* ── Step 1: 2FA ── */}
+        {/* ── Step 2: 2FA ── */}
         {step==='VERIFY_2FA'&&(
           <View>
             <Text style={s.stepTitle}>ENTER 2FA CODE</Text>
@@ -291,7 +449,7 @@ export default function MarkAttendanceScreen({ route, navigation }) {
           </View>
         )}
 
-        {/* ── Step 2: Face scan ── */}
+        {/* ── Step 0: Face scan ── */}
         {step==='SCAN_FACE'&&(
           <View>
             <Text style={s.stepTitle}>FACE SCAN</Text>
@@ -330,11 +488,11 @@ export default function MarkAttendanceScreen({ route, navigation }) {
             <GlowCard color="cyan" style={{marginBottom:16}}>
               <Text style={s.checkTitle}>VERIFICATION SUMMARY</Text>
               {[
-                {label:'Face Image',   done:!!capturedImg,  val:capturedImg?'Captured ✓':'Not captured'},
-                {label:'Wi-Fi Range',  done:wifiVerified,   val:wifiVerified ? `${session?.hotspot_ssid || 'Skipped'} ✓` : 'Not verified'},
-                {label:'2FA Code',     done:true,           val:`${twoFaCode.slice(0,3)} ${twoFaCode.slice(3)}`},
-                {label:'Device MAC',   done:!!MAC,          val:MAC},
-                {label:'Session ID',   done:true,           val:(session?.session_id||'').slice(0,8)+'...'},
+                {label:'Face Image',      done:!!capturedImg,  val:capturedImg?'Captured ✓':'Not captured'},
+                {label:'BLE Proximity',   done:bleVerified,    val:bleVerified ? `${detectedDevices.length} devices ✓` : 'Not verified'},
+                {label:'2FA Code',        done:true,           val:`${twoFaCode.slice(0,3)} ${twoFaCode.slice(3)}`},
+                {label:'Device MAC',      done:!!MAC,          val:MAC},
+                {label:'Session ID',      done:true,           val:(session?.session_id||'').slice(0,8)+'...'},
               ].map((c,i)=>(
                 <View key={i} style={s.checkRow}>
                   <Ionicons name={c.done?'checkmark-circle':'close-circle'} size={15} color={c.done?Colors.green:Colors.red}/>
@@ -370,18 +528,18 @@ const s = StyleSheet.create({
   stepTitle:{fontFamily:'monospace',fontSize:15,fontWeight:'800',color:Colors.cyan,letterSpacing:1,marginBottom:5},
   stepDesc: {fontFamily:'monospace',fontSize:11,color:Colors.textSecondary,lineHeight:17,marginBottom:18},
 
-  // Wi-Fi step
-  wifiCard:     {alignItems:'center',padding:24,marginBottom:14},
-  wifiIconWrap: {marginBottom:14},
-  wifiStatus:   {fontFamily:'monospace',fontSize:12,fontWeight:'700',color:Colors.cyan,letterSpacing:2,textAlign:'center',marginBottom:8},
-  ssidTarget:   {flexDirection:'row',alignItems:'center',gap:5,backgroundColor:Colors.cyanGlow,borderWidth:1,borderColor:Colors.cyanBorder,borderRadius:3,paddingHorizontal:10,paddingVertical:4,marginTop:4},
-  ssidTargetText:{fontFamily:'monospace',fontSize:10,color:Colors.cyan,letterSpacing:0.5},
-  networkList:  {marginTop:16,width:'100%',borderTopWidth:1,borderTopColor:Colors.border,paddingTop:10},
-  networkListTitle:{fontFamily:'monospace',fontSize:8,color:Colors.textMuted,letterSpacing:1.5,marginBottom:6,textAlign:'center'},
-  networkItem:  {flexDirection:'row',alignItems:'center',gap:6,paddingVertical:4,borderBottomWidth:0.5,borderBottomColor:Colors.border},
-  networkName:  {fontFamily:'monospace',fontSize:10,color:Colors.textSecondary,flex:1},
-  networkSignal:{fontFamily:'monospace',fontSize:8,color:Colors.textDim},
-  networkMore:  {fontFamily:'monospace',fontSize:8,color:Colors.textDim,textAlign:'center',marginTop:4},
+  // BLE step
+  bleCard:     {alignItems:'center',padding:24,marginBottom:14},
+  bleIconWrap: {marginBottom:14},
+  bleStatus:   {fontFamily:'monospace',fontSize:12,fontWeight:'700',color:Colors.cyan,letterSpacing:2,textAlign:'center',marginBottom:8},
+  beaconTarget:{flexDirection:'row',alignItems:'center',gap:5,backgroundColor:Colors.cyanGlow,borderWidth:1,borderColor:Colors.cyanBorder,borderRadius:3,paddingHorizontal:10,paddingVertical:4,marginTop:4},
+  beaconTargetText:{fontFamily:'monospace',fontSize:10,color:Colors.cyan,letterSpacing:0.5},
+  deviceList:  {marginTop:16,width:'100%',borderTopWidth:1,borderTopColor:Colors.border,paddingTop:10},
+  deviceListTitle:{fontFamily:'monospace',fontSize:8,color:Colors.textMuted,letterSpacing:1.5,marginBottom:6,textAlign:'center'},
+  deviceItem:  {flexDirection:'row',alignItems:'center',gap:6,paddingVertical:4,borderBottomWidth:0.5,borderBottomColor:Colors.border},
+  deviceName:  {fontFamily:'monospace',fontSize:10,color:Colors.textSecondary,flex:1},
+  deviceSignal:{fontFamily:'monospace',fontSize:8,color:Colors.textDim},
+  deviceMore:  {fontFamily:'monospace',fontSize:8,color:Colors.textDim,textAlign:'center',marginTop:4},
 
   // 2FA step
   codeRow:  {flexDirection:'row',gap:8,justifyContent:'center',marginBottom:24},

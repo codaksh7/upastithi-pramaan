@@ -101,9 +101,8 @@ export const facultyApi = {
   getProfile:         () => api.get('/faculty/me'),
   getSubjects:        () => api.get('/faculty/subjects'),
   getActiveSession:   () => api.get('/faculty/sessions/active'),
-  startSession:       (subjectId, hotspotSsid) => {
-    const body = { subject_id: subjectId };
-    if (hotspotSsid) body.hotspot_ssid = hotspotSsid;
+  startSession:       (subjectId, beaconId) => {
+    const body = { subject_id: subjectId, beacon_id: beaconId };
     return api.post('/faculty/sessions/start', body);
   },
   endSession:         (id) => api.post(`/faculty/sessions/${id}/end`),

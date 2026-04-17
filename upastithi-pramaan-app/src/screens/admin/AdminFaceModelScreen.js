@@ -137,7 +137,7 @@ export default function AdminFaceModelScreen() {
         <SectionLabel label="How It Works" style={{ marginTop: 20 }} />
         <GlowCard>
           <Text style={s.howItWorksText}>
-            {'1. ENROLLMENT — 5-10 reference images per student are stored. Each image is converted to a 128-dimension face encoding using dlib\'s ResNet model.\n\n2. DETECTION — OpenCV captures frames from webcam. HOG or CNN model locates all faces in the frame at up to 30fps.\n\n3. RECOGNITION — Each detected face is encoded and compared via Euclidean distance against all enrolled student encodings. A match within the configured tolerance (default 0.6) confirms identity.\n\n4. 2FA GATE — Face match must be TRUE AND the student\'s registered MAC address must be present on the classroom hotspot simultaneously. Both layers must pass.'}
+            {'1. ENROLLMENT — 5-10 reference images per student are stored. Each image is converted to a 128-dimension face encoding using dlib\'s ResNet model.\n\n2. DETECTION — OpenCV captures frames from webcam. HOG or CNN model locates all faces in the frame at up to 30fps.\n\n3. RECOGNITION — Each detected face is encoded and compared via Euclidean distance against all enrolled student encodings. A match within the configured tolerance (default 0.6) confirms identity.\n\n4. 2FA GATE — Face match must be TRUE AND the student\'s device must be within BLE range of the classroom Bluetooth beacon simultaneously. All verification layers must pass.'}
           </Text>
         </GlowCard>
 

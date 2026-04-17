@@ -19,7 +19,9 @@
       "bundleIdentifier": "com.frcrce.upastithi",
       "infoPlist": {
         "NSCameraUsageDescription": "Camera required for face recognition attendance.",
-        "NSLocalNetworkUsageDescription": "Network access required for device verification."
+        "NSLocalNetworkUsageDescription": "Network access required for device verification.",
+        "NSBluetoothAlwaysUsageDescription": "Bluetooth is required for proximity-based attendance verification.",
+        "NSBluetoothPeripheralUsageDescription": "Bluetooth is required to broadcast attendance beacon."
       }
     },
     "android": {
@@ -31,15 +33,21 @@
       "permissions": [
         "CAMERA",
         "ACCESS_NETWORK_STATE",
-        "ACCESS_WIFI_STATE",
-        "CHANGE_WIFI_STATE",
+        "BLUETOOTH",
+        "BLUETOOTH_ADMIN",
+        "BLUETOOTH_SCAN",
+        "BLUETOOTH_CONNECT",
+        "BLUETOOTH_ADVERTISE",
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
         "INTERNET",
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE",
         "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT"
       ]
     },
     "web": {
@@ -55,13 +63,25 @@
       "expo-secure-store",
       "expo-document-picker",
       "@react-native-community/datetimepicker",
-      "./plugins/withWifiReborn"
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": false,
+          "modes": [
+            "peripheral",
+            "central"
+          ],
+          "bluetoothAlwaysPermission": "Allow Upastithi-Pramaan to use Bluetooth for attendance proximity verification."
+        }
+      ],
+      "./plugins/withBLE"
     ],
     "scheme": "upastithi",
     "extra": {
       "eas": {
-        "projectId": "07540938-fd3a-4023-b020-86ad59aced54"
+        "projectId": "5b401684-c18b-46ae-81a7-7950cf1763b4"
       }
-    }
+    },
+    "owner": "babayaga296"
   }
 }
