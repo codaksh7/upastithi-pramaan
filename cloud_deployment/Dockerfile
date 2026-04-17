@@ -9,10 +9,6 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
-    ffmpeg \
-    libsm6 \
-    libxext6 \
-    libgl1-mesa-glx \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy only the isolated cloud requirements first to leverage Docker cache
