@@ -34,8 +34,13 @@ export default function MarkAttendanceScreen({ route, navigation }) {
 
   // Auto-start Wi-Fi check when step reaches WIFI_CHECK
   useEffect(() => {
-    if (step === 'WIFI_CHECK' && session?.hotspot_ssid && !wifiVerified && !wifiScanning) {
-      scanWifi();
+    if (step === 'WIFI_CHECK') {
+      if (wifiVerified) {
+        // If already verified from a previous attempt, skip directly!
+        setStep('VERIFY_2FA');
+      } else if (session?.hotspot_ssid && !wifiScanning) {
+        scanWifi();
+      }
     }
   }, [step]);
 
@@ -95,7 +100,6 @@ export default function MarkAttendanceScreen({ route, navigation }) {
     setStep('SUBMIT');
   };
 
-  // ── UPDATED: Real face capture + base64 ──────────────────────────────────────
   const captureAndContinue = async () => {
     if (!cameraReady || !cameraRef.current) {
       setError('Camera not ready — please wait a moment and try again.');
@@ -104,7 +108,6 @@ export default function MarkAttendanceScreen({ route, navigation }) {
     setLoading(true);
     setError('');
     try {
-      // Capture photo with base64 (matches Gemini backend expecting image_base64)
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.7, base64: true });
       setCapturedImg(photo.base64);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -117,7 +120,6 @@ export default function MarkAttendanceScreen({ route, navigation }) {
       setLoading(false);
     }
   };
-  // ─────────────────────────────────────────────────────────────────────────────
 
   const submitAttendance = async () => {
     setLoading(true); setError('');
@@ -126,28 +128,20 @@ export default function MarkAttendanceScreen({ route, navigation }) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setSuccess(true);
     } catch(e) {
-      const msg = (e.message || '').toLowerCase();
-      let userError;
-      if (msg.includes('2fa') || msg.includes('invalid') && msg.includes('code') || msg.includes('expired')) {
-        userError = '6-digit code incorrect — The code you entered does not match or has expired. Ask your faculty for the current code.';
+      const rawMsg = e.message || 'Unknown network error';
+      const msg = rawMsg.toLowerCase();
+      
+      let userError = rawMsg; // Show EXACT backend error by default
+      
+      // We only reroute the user to previous steps if they need to fix something:
+      if (msg.includes('2fa') || msg.includes('invalid') || msg.includes('expired')) {
         setStep('VERIFY_2FA');
       } else if (msg.includes('wi-fi') || msg.includes('proximity') || msg.includes('hotspot')) {
-        userError = 'Wi-Fi proximity check failed — You must be in range of the faculty\'s hotspot to mark attendance.';
         setStep('WIFI_CHECK');
-      } else if (msg.includes('face') || msg.includes('verification failed')) {
-        userError = 'Face scan failed — Face could not be verified. Please try again with better lighting.';
+      } else if (msg.includes('face') || msg.includes('no face') || msg.includes('verification failed')) {
         setStep('SCAN_FACE');
-      } else if (msg.includes('mac') || msg.includes('device') || msg.includes('unrecognized')) {
-        userError = 'Device not recognized — Your device is not registered or approved. Contact admin.';
-      } else if (msg.includes('already marked') || msg.includes('already')) {
-        userError = 'Attendance already submitted — You have already marked attendance for this session.';
-      } else if (msg.includes('not active') || msg.includes('ended') || msg.includes('no longer')) {
-        userError = 'Session ended — This session is no longer active. Contact your faculty.';
-      } else if (msg.includes('not found')) {
-        userError = 'Session not found — The session may have been closed by the faculty.';
-      } else {
-        userError = e.message || 'Attendance submission failed. Please try again.';
-      }
+      } 
+      
       setError(userError);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally { setLoading(false); }
