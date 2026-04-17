@@ -173,10 +173,15 @@ export default function MarkAttendanceScreen({ route, navigation }) {
 
           // Environmental Signature matching: Check if this device matches any in the classroom signature
           const beaconId = session?.beacon_id || '';
+          const isGeneric = device.id === '00:00:00:00:00:00' || device.id === '02:00:00:00:00:00' || (!device.id) || device.id.length < 10;
+          
           if (beaconId.startsWith('ENV:')) {
-            const signatureMacs = beaconId.replace('ENV:', '').split('|');
-            if (signatureMacs.includes(device.id)) {
-              foundBeacon = true;
+            if (!isGeneric) {
+              const signatureMacs = beaconId.replace('ENV:', '').split('|');
+              // Require an exact match on a non-generic MAC address.
+              if (signatureMacs.includes(device.id)) {
+                foundBeacon = true;
+              }
             }
           } else {
             // Legacy check (just in case they use older sessions)

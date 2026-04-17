@@ -131,7 +131,16 @@ export default function FacultySessionScreen() {
       // Since Android central apps can't natively broadcast, we map the classroom's Bluetooth environment!
       const envDevices = new Set();
       mgr.startDeviceScan(null, { allowDuplicates: false }, (err, device) => {
-        if (device && device.id) envDevices.add(device.id);
+        if (device && device.id) {
+          // STRICT FILTERING: Reject generic/masked MACs that cause false matches across cities!
+          const isGeneric = device.id === '00:00:00:00:00:00' || device.id === '02:00:00:00:00:00' || device.id.length < 10;
+          // Require the device to have a name OR have a very strong signal (filtering out generic weak background noise)
+          const isHighQuality = (device.name || device.localName) || (device.rssi > -80);
+          
+          if (!isGeneric && isHighQuality) {
+            envDevices.add(device.id);
+          }
+        }
       });
       
       // Map the room for 5 seconds
