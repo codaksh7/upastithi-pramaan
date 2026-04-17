@@ -14,6 +14,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy only the isolated cloud requirements first to leverage Docker cache
 COPY cloud_deployment/requirements.txt .
 
+# Force the C++ compiler to use only 1 thread. 
+# By default, Render tries to use all 8+ cloud CPUs to compile dlib, hitting 8GB+ of memory and crashing.
+ENV CMAKE_BUILD_PARALLEL_LEVEL=1
+
 # Install Python dependencies specifically tuned for cloud
 RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
