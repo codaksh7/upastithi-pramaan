@@ -257,8 +257,9 @@ export default function FacultySessionScreen() {
       const session = await facultyApi.startSession(selectedSub.id, rssiThreshold);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-      // Auto-start BLE advertising
-      if (session?.ble_secret && session?.ble_service_uuid) {
+      // Auto-start BLE advertising only if device supports it
+      // If not supported, session runs in QR/2FA-only mode — fully functional
+      if (session?.ble_secret && session?.ble_service_uuid && bleSupported) {
         await startBleAdvertising(session);
       }
 
@@ -468,31 +469,34 @@ export default function FacultySessionScreen() {
             {/* ── BLE Configuration ── */}
             <SectionLabel label="BLE Proximity Settings" style={{ marginTop: 18 }} />
 
-            <GlowCard color={bleSupported === false ? 'red' : 'cyan'} style={s.bleConfigCard}>
+            <GlowCard
+              color={bleSupported === false ? 'cyan' : bleSupported ? 'green' : 'cyan'}
+              style={s.bleConfigCard}
+            >
               <View style={s.bleStatusRow}>
                 <Ionicons
-                  name={bleSupported === false ? 'warning' : bleSupported ? 'bluetooth' : 'hourglass'}
+                  name={bleSupported === false ? 'qr-code' : bleSupported ? 'bluetooth' : 'hourglass'}
                   size={24}
-                  color={bleSupported === false ? Colors.red : Colors.cyan}
+                  color={bleSupported === false ? Colors.cyan : Colors.cyan}
                 />
                 <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={[s.bleConfigTitle, bleSupported === false && { color: Colors.red }]}>
+                  <Text style={s.bleConfigTitle}>
                     {bleSupported === null ? 'CHECKING BLE SUPPORT...'
                       : bleSupported ? (bleBtEnabled ? 'BLE READY ✓' : 'BLUETOOTH DISABLED')
-                      : 'BLE ADVERTISING NOT SUPPORTED'}
+                      : 'QR / 2FA MODE ACTIVE'}
                   </Text>
                   <Text style={s.bleConfigSub}>
                     {bleSupported === null ? 'Checking device capabilities...'
                       : bleSupported
                         ? (bleBtEnabled
-                          ? 'Your device will broadcast a BLE beacon for student proximity verification'
-                          : 'Please enable Bluetooth to use BLE attendance')
-                        : 'This device cannot advertise BLE. Students can use QR fallback.'}
+                          ? 'Device will broadcast BLE beacon for student proximity verification.'
+                          : 'Please enable Bluetooth to use BLE proximity mode.')
+                        : 'This device cannot advertise BLE. Session will run in QR + 2FA code mode. Students can mark attendance using the 6-digit code shown below.'}
                   </Text>
                 </View>
               </View>
 
-              {/* RSSI threshold config */}
+              {/* RSSI threshold config — only when BLE is supported */}
               {bleSupported && (
                 <View style={s.rssiConfig}>
                   <Text style={s.rssiLabel}>RSSI Threshold: {rssiThreshold} dBm</Text>
@@ -524,8 +528,9 @@ export default function FacultySessionScreen() {
               )}
             </GlowCard>
 
+            {/* Start Session — works in both BLE and QR/2FA-only mode */}
             <CyberButton
-              label="Start Session"
+              label={bleSupported === false ? 'Start Session (QR Mode)' : 'Start Session'}
               color="green"
               onPress={startSession}
               loading={starting}

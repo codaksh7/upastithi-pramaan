@@ -409,45 +409,148 @@ function withBleAdvertiser(config) {
   config = withMainApplication(config, (config) => {
     let contents = config.modResults.contents;
     const isKt = config.modResults.language === "kt" || config.modResults.path.endsWith(".kt");
-    
+
+    console.log(`[withBleAdvertiser] MainApplication language: ${isKt ? "Kotlin" : "Java"}`);
+    console.log(`[withBleAdvertiser] MainApplication path: ${config.modResults.path}`);
+
     const importLineKt = "import com.frcrce.upastithi.BleAdvertiserPackage";
     const packageLineKt = "add(BleAdvertiserPackage())";
     const importLineJava = "import com.frcrce.upastithi.BleAdvertiserPackage;";
     const packageLineJava = "packages.add(new BleAdvertiserPackage());";
 
     // Remove old HotspotPackage references
-    contents = contents.replace(/import com\.frcrce\.upastithi\.HotspotPackage;?\n?/g, "");
-    contents = contents.replace(/packages\.add\(new HotspotPackage\(\)\);.*\n?/g, "");
-    contents = contents.replace(/add\(HotspotPackage\(\)\).*\n?/g, "");
+    contents = contents.replace(/import com\.frcrce\.upastithi\.HotspotPackage;?\s*\n?/g, "");
+    contents = contents.replace(/packages\.add\(new HotspotPackage\(\)\);?.*\n?/g, "");
+    contents = contents.replace(/\s*add\(HotspotPackage\(\)\)\s*\n?/g, "\n");
 
     if (isKt) {
-      // Add import if missing
+      // ── KOTLIN MainApplication ──
+
+      // 1. Add import if missing
       if (!contents.includes(importLineKt)) {
-        contents = contents.replace(
-          /^package [\s\S]+?(?=\n)/m,
-          `$& \n\n${importLineKt}`
-        );
+        // Strategy A: Add after the last existing import line
+        const lastImportMatch = contents.match(/^(import .+)$/gm);
+        if (lastImportMatch && lastImportMatch.length > 0) {
+          const lastImport = lastImportMatch[lastImportMatch.length - 1];
+          contents = contents.replace(lastImport, `${lastImport}\n${importLineKt}`);
+          console.log("[withBleAdvertiser] ✓ Kotlin import added (after last import)");
+        } else {
+          // Strategy B: Add after package declaration
+          contents = contents.replace(
+            /^(package .+)$/m,
+            `$1\n\n${importLineKt}`
+          );
+          console.log("[withBleAdvertiser] ✓ Kotlin import added (after package)");
+        }
+      } else {
+        console.log("[withBleAdvertiser] ✓ Kotlin import already present");
       }
-      // Add to getPackages() if missing
+
+      // 2. Add to getPackages() if missing
       if (!contents.includes(packageLineKt)) {
-        contents = contents.replace(
-          /(\/\/ add\(MyReactNativePackage\(\)\))/g,
-          `$1\n              ${packageLineKt}`
-        );
+        let injected = false;
+
+        // Strategy A: Look for the standard Expo comment patterns
+        const commentPatterns = [
+          /(\/\/\s*Packages that cannot be autolinked.*\n)/,
+          /(\/\/\s*add\(MyReactNativePackage\(\)\).*\n)/,
+          /(\/\/\s*packages that cannot be autolinked.*\n)/i,
+        ];
+        for (const pattern of commentPatterns) {
+          if (pattern.test(contents)) {
+            contents = contents.replace(pattern, `$1              ${packageLineKt}\n`);
+            injected = true;
+            console.log("[withBleAdvertiser] ✓ Kotlin package added (comment pattern)");
+            break;
+          }
+        }
+
+        // Strategy B: Look for PackageList(this).packages.apply block
+        if (!injected && contents.includes("PackageList(this).packages.apply")) {
+          contents = contents.replace(
+            /(PackageList\(this\)\.packages\.apply\s*\{)/,
+            `$1\n              ${packageLineKt} // BleAdvertiserModule`
+          );
+          injected = true;
+          console.log("[withBleAdvertiser] ✓ Kotlin package added (PackageList.apply)");
+        }
+
+        // Strategy C: Look for "packages.apply {" or similar
+        if (!injected && /\.packages\.apply\s*\{/.test(contents)) {
+          contents = contents.replace(
+            /(\.packages\.apply\s*\{)/,
+            `$1\n              ${packageLineKt} // BleAdvertiserModule`
+          );
+          injected = true;
+          console.log("[withBleAdvertiser] ✓ Kotlin package added (.packages.apply)");
+        }
+
+        // Strategy D: Look for getPackages override returning a list
+        if (!injected && /override fun getPackages/.test(contents)) {
+          contents = contents.replace(
+            /(override fun getPackages\(\)[^{]*\{)/,
+            `$1\n              ${packageLineKt} // BleAdvertiserModule`
+          );
+          injected = true;
+          console.log("[withBleAdvertiser] ✓ Kotlin package added (getPackages override)");
+        }
+
+        if (!injected) {
+          console.warn("[withBleAdvertiser] ⚠ Could NOT inject Kotlin package line! MainApplication contents:");
+          console.warn(contents.substring(0, 500));
+        }
+      } else {
+        console.log("[withBleAdvertiser] ✓ Kotlin package already present");
       }
+
     } else {
-      // Java
+      // ── JAVA MainApplication ──
+
+      // 1. Add import if missing
       if (!contents.includes(importLineJava)) {
-        contents = contents.replace(
-          /^(package .+;)/m,
-          `$1\n\n${importLineJava}`
-        );
+        const lastImportMatch = contents.match(/^(import .+;)$/gm);
+        if (lastImportMatch && lastImportMatch.length > 0) {
+          const lastImport = lastImportMatch[lastImportMatch.length - 1];
+          contents = contents.replace(lastImport, `${lastImport}\n${importLineJava}`);
+          console.log("[withBleAdvertiser] ✓ Java import added");
+        } else {
+          contents = contents.replace(/^(package .+;)/m, `$1\n\n${importLineJava}`);
+          console.log("[withBleAdvertiser] ✓ Java import added (after package)");
+        }
       }
+
+      // 2. Add to getPackages() if missing
       if (!contents.includes(packageLineJava)) {
-        contents = contents.replace(
-          /(List<ReactPackage> packages = new PackageList\(this\)\.getPackages\(\);)/,
-          `$1\n            ${packageLineJava} // BleAdvertiserModule`
-        );
+        let injected = false;
+
+        // Strategy A: After PackageList constructor
+        if (contents.includes("new PackageList(this).getPackages()")) {
+          contents = contents.replace(
+            /(List<ReactPackage> packages = new PackageList\(this\)\.getPackages\(\);)/,
+            `$1\n            ${packageLineJava} // BleAdvertiserModule`
+          );
+          injected = true;
+          console.log("[withBleAdvertiser] ✓ Java package added (PackageList)");
+        }
+
+        // Strategy B: After any "getPackages" return
+        if (!injected && /protected List<ReactPackage> getPackages/.test(contents)) {
+          contents = contents.replace(
+            /(protected List<ReactPackage> getPackages\(\)\s*\{[^}]*?return\s+[^;]+;)/s,
+            (match) => {
+              return match.replace(
+                /(List<ReactPackage>\s+\w+\s*=\s*[^;]+;)/,
+                `$1\n            ${packageLineJava} // BleAdvertiserModule`
+              );
+            }
+          );
+          injected = true;
+          console.log("[withBleAdvertiser] ✓ Java package added (getPackages method)");
+        }
+
+        if (!injected) {
+          console.warn("[withBleAdvertiser] ⚠ Could NOT inject Java package line!");
+        }
       }
     }
 
