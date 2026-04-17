@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from routers import auth, students, faculty, admin, disputes, notifications
+from routers import auth, students, faculty, admin, disputes, notifications, face
 from routers.faculty import rotate_active_session_codes, _CODE_TTL_SECONDS
 
 # ── APScheduler: rotate 2FA codes every 5 minutes ─────────────────────────────
@@ -52,6 +52,7 @@ app.include_router(faculty.router,       prefix="/faculty",       tags=["Faculty
 app.include_router(admin.router,         prefix="/admin",         tags=["Admin"])
 app.include_router(disputes.router,      prefix="/disputes",      tags=["Disputes"])
 app.include_router(notifications.router, prefix="/notifications", tags=["Notifications"])
+app.include_router(face.router,          prefix="/face",          tags=["Face"])
 
 
 @app.get("/", tags=["Health"])

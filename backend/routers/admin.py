@@ -77,7 +77,7 @@ def get_overview(user: dict = Depends(admin_only)):
         "system_health": {
             "face_engine":    "Online",
             "database":       "Connected",
-            "hotspot_module": "Standby",
+            "bluetooth_module": "Standby",
             "webcam_feed":    "Active",
         },
     }

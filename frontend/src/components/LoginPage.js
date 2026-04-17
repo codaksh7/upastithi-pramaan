@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { gsap } from 'gsap';
-import { Scan, Shield, Eye, EyeOff, LogIn, Users, ArrowLeft, AlertTriangle, CheckCircle2, Cpu, Wifi, Lock } from 'lucide-react';
+import { Scan, Shield, Eye, EyeOff, LogIn, Users, ArrowLeft, AlertTriangle, CheckCircle2, Cpu, Bluetooth, Lock } from 'lucide-react';
 import { authApi, saveAuth } from '../api';
 import { useAuth } from '../context/AuthContext';
 import './LoginPage.css';
@@ -55,7 +55,7 @@ export default function LoginPage() {
     }
     setLoading(true);
     try {
-      const data = await authApi.login(role, form.id, form.password, form.division);
+      const data = await authApi.login(role, form.id.trim(), form.password, form.division);
       saveAuth(data.access_token, data.role, data.profile);
       refreshAuth();
       const dest = role === 'faculty' ? '/faculty-dashboard'
@@ -219,7 +219,7 @@ export default function LoginPage() {
 
         {/* Status bar */}
         <div className="login__status-bar">
-          {[{ icon: <Cpu size={11} />, label: 'Engine Online' }, { icon: <Wifi size={11} />, label: 'Network Active' }, { icon: <CheckCircle2 size={11} />, label: 'DB Connected' }].map((s, i) => (
+          {[{ icon: <Cpu size={11} />, label: 'Engine Online' }, { icon: <Bluetooth size={11} />, label: 'BLE Active' }, { icon: <CheckCircle2 size={11} />, label: 'DB Connected' }].map((s, i) => (
             <div key={i} className="login__status-item">{s.icon}{s.label}</div>
           ))}
         </div>

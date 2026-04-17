@@ -354,7 +354,7 @@ export default function FacultyDashboard() {
                     <div className="fd__status-grid" style={{ marginTop: 16 }}>
                       {[
                         { label: 'Webcam', val: activeSession ? 'Active' : 'Standby', color: activeSession ? 'var(--green)' : 'var(--text-dim)' },
-                        { label: 'Hotspot', val: activeSession ? 'Broadcasting' : 'Off', color: activeSession ? 'var(--cyan)' : 'var(--text-dim)' },
+                        { label: 'BLE Beacon', val: activeSession ? 'Broadcasting' : 'Off', color: activeSession ? 'var(--cyan)' : 'var(--text-dim)' },
                         { label: '2FA Gate', val: activeSession ? 'Open' : 'Closed', color: activeSession ? 'var(--green)' : 'var(--text-dim)' },
                         { label: 'Duration', val: activeSession ? fmt(timer) : '—', color: 'var(--amber)' },
                       ].map((item, i) => (
@@ -545,6 +545,7 @@ export default function FacultyDashboard() {
                         type="date"
                         className="fd__select"
                         value={customFrom}
+                        max={new Date().toISOString().split("T")[0]}
                         onChange={e => setCustomFrom(e.target.value)}
                         style={{ width: '100%' }}
                       />
@@ -555,6 +556,7 @@ export default function FacultyDashboard() {
                         type="date"
                         className="fd__select"
                         value={customTo}
+                        max={new Date().toISOString().split("T")[0]}
                         onChange={e => setCustomTo(e.target.value)}
                         style={{ width: '100%' }}
                       />

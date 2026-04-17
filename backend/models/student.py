@@ -33,7 +33,9 @@ class MarkAttendanceRequest(BaseModel):
     mac_address: str
     image_base64: Optional[str] = None
     twofa_code: Optional[str] = None
-    wifi_verified: bool = False
+    bluetooth_verified: bool = False
+    detected_beacon_id: Optional[str] = None  # BLE beacon UUID detected by student's device
+    liveness_challenge: Optional[str] = None
 
 
 class Verify2FARequest(BaseModel):

@@ -641,7 +641,7 @@ export default function StudentDashboard() {
                 <div className="sd__card sd__support-card">
                   <div className="sd__support-title">Why wasn't my attendance marked?</div>
                   {[
-                    'Is your phone connected to the classroom Wi-Fi Hotspot?',
+                    'Is your phone\'s Bluetooth enabled and in range of the class beacon?',
                     'Is your MAC address registered? (Check Profile → Device)',
                     'Was your face clearly visible to the webcam?',
                     'Was the session active at that time?',
@@ -665,6 +665,7 @@ export default function StudentDashboard() {
                     <div>
                       <label className="sd__field-label">Date</label>
                       <input type="date" className="sd__input"
+                        max={new Date().toISOString().split("T")[0]}
                         value={disputeForm.date}
                         onChange={e => setDisputeForm(f => ({ ...f, date: e.target.value }))} />
                     </div>
