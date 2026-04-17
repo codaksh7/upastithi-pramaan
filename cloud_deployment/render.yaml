@@ -1,0 +1,15 @@
+# Render deployment configuration
+services:
+  - type: web
+    name: upastithi-ai-backend
+    env: docker
+    region: ohio
+    plan: free # Can upgrade if ML models need more RAM
+    dockerfilePath: ./cloud_deployment/Dockerfile
+    dockerContext: .
+    healthCheckPath: /
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
