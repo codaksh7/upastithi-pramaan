@@ -5,8 +5,10 @@ All endpoints require a valid JWT with role = "student".
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 import io
+import base64
 
 from database import get_supabase, safe_data
+from utils.face import get_face_encoding_from_bytes, compare_encodings
 from dependencies import require_role
 from models.student import DeviceChangeRequest, DisputeCreate, MarkAttendanceRequest, Verify2FARequest
 from datetime import datetime, timezone
@@ -153,31 +155,76 @@ def mark_attendance(body: MarkAttendanceRequest, user: dict = Depends(student_on
     if existing:
         raise HTTPException(409, "Attendance already marked for this session")
 
-    # Face verification logic
-    if not getattr(body, "image_base64", None):
-        raise HTTPException(400, "Face scan is required to mark attendance.")
+        # Face verification logic
+        if not getattr(body, "image_base64", None):
+            raise HTTPException(400, "Face scan is required to mark attendance.")
 
-    # Decode image, run through face embedding, compare with DB.
-    # Mocking for now as the actual model requires heavy dependencies:
-    import random
-    # Temporarily force 100% successful face match until actual ML model is deployed
-    is_match = True
-    if not is_match:
-        raise HTTPException(403, "Face verification failed. Please try again in better lighting.")
+        from utils.face import get_face_data_from_bytes, verify_liveness
+        try:
+            img_str = body.image_base64
+            if "base64," in img_str:
+                img_str = img_str.split("base64,")[1]
+                
+            image_bytes = base64.b64decode(img_str)
+            incoming_embedding, landmarks = get_face_data_from_bytes(image_bytes)
+        except Exception as e:
+            raise HTTPException(400, f"Error processing face image: {str(e)}")
+            
+        # Verify Liveness Challenge
+        if body.liveness_challenge:
+            liveness_passed = verify_liveness(landmarks, body.liveness_challenge)
+            if not liveness_passed:
+                raise HTTPException(403, f"Liveness check failed! You must follow the challenge: {body.liveness_challenge}")
 
-    face_verified = True
-    confidence = round(random.uniform(70.0, 99.9), 2)
+        # Fetch stored embedding from students table
+        student_record = db.table("students").select("face_images").eq("id", user["sub"]).maybe_single().execute()
+        student_data = safe_data(student_record)
+        
+        if not student_data or not student_data.get("face_images") or len(student_data["face_images"]) == 0:
+            raise HTTPException(400, "You have not registered your face yet. Please register your face first.")
 
-    # 5. Insert attendance record
-    now_iso = datetime.now(timezone.utc).isoformat()
-    db.table("attendance_records").insert({
-        "session_id": body.session_id,
-        "student_id": user["sub"],
-        "mac_verified": True,
-        "face_verified": face_verified,
-        "confidence": confidence,
-        "marked_at": now_iso
-    }).execute()
+        stored_embedding = student_data["face_images"][0] # Use the first registered embedding
+        
+        # If the stored_embedding is a string path (from the mobile app registration)
+        if isinstance(stored_embedding, str):
+            path = stored_embedding
+            try:
+                from utils.face import get_face_encoding_from_bytes
+                res = db.storage.from_("student_faces").download(path)
+                stored_embedding = get_face_encoding_from_bytes(res)
+            except Exception as store_err:
+                raise HTTPException(400, f"Stored face format was a file, but could not download or process it from storage. Try registering again. {str(store_err)}")
+
+        is_match, distance, similarity = compare_encodings(stored_embedding, incoming_embedding)
+        
+        if not is_match:
+            raise HTTPException(403, f"Face verification failed. Similarity: {similarity}%. Please try again in better lighting.")
+
+        # 5. FRAUD Scoring Engine
+        fraud_score = 0
+        fraud_flag = None
+        
+        recent_mac_users = db.table("attendance_records").select("id").eq(
+            "session_id", body.session_id
+        ).eq("frontend_mac", body.mac_address).execute().data
+        
+        if recent_mac_users and len(recent_mac_users) > 0:
+            fraud_score = 85
+            fraud_flag = "DEVICE_SHARING_DETECTED"
+
+        # 6. Insert attendance record
+        now_iso = datetime.now(timezone.utc).isoformat()
+        db.table("attendance_records").insert({
+            "session_id": body.session_id,
+            "student_id": user["sub"],
+            "mac_verified": True,
+            "face_verified": True,
+            "confidence": similarity,
+            "marked_at": now_iso,
+            "fraud_score": fraud_score,
+            "fraud_flag": fraud_flag,
+            "frontend_mac": body.mac_address
+        }).execute()
 
     return {"message": "Attendance marked successfully"}
 
