@@ -23,6 +23,7 @@ export default function MarkAttendanceScreen({ route, navigation }) {
   const [capturedImg, setCapturedImg] = useState(null);
   const [error,       setError]       = useState('');
   const [success,     setSuccess]     = useState(false);
+  const [livenessChallenge, setLivenessChallenge] = useState('');
   const cameraRef = useRef(null);
   const [cameraReady, setCameraReady] = useState(false);
   const MAC = 'AA:BB:CC:DD:EE:FF'; // RN: actual MAC needs native module
@@ -46,7 +47,13 @@ export default function MarkAttendanceScreen({ route, navigation }) {
 
   // Reset camera ready state when leaving face scan step
   useEffect(() => {
-    if (step !== 'SCAN_FACE') setCameraReady(false);
+    if (step !== 'SCAN_FACE') {
+      setCameraReady(false);
+      setLivenessChallenge('');
+    } else if (!livenessChallenge) {
+      const challenges = ['SMILE', 'TURN_HEAD'];
+      setLivenessChallenge(challenges[Math.floor(Math.random() * challenges.length)]);
+    }
   }, [step]);
 
   const requestLocationPermission = async () => {
@@ -124,7 +131,14 @@ export default function MarkAttendanceScreen({ route, navigation }) {
   const submitAttendance = async () => {
     setLoading(true); setError('');
     try {
-      await studentApi.markAttendance({ session_id:session.session_id, mac_address:MAC, twofa_code:twoFaCode, image_base64:capturedImg, wifi_verified:wifiVerified });
+      await studentApi.markAttendance({ 
+        session_id:session.session_id, 
+        mac_address:MAC, 
+        twofa_code:twoFaCode, 
+        image_base64:capturedImg, 
+        wifi_verified:wifiVerified,
+        liveness_challenge: livenessChallenge
+      });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setSuccess(true);
     } catch(e) {
@@ -307,7 +321,9 @@ export default function MarkAttendanceScreen({ route, navigation }) {
                       <View key={i} style={[s.fc,cs]}/>
                     ))}
                   </View>
-                  <Text style={s.faceScanTxt}>{cameraReady ? 'ALIGN FACE — LOOK STRAIGHT' : 'CAMERA INITIALIZING...'}</Text>
+                  <Text style={[s.faceScanTxt, livenessChallenge && {color: Colors.red, fontWeight: 'bold'}]}>
+                    {cameraReady ? (livenessChallenge === 'SMILE' ? 'PROVE YOU ARE HUMAN: SMILE WIDELY' : 'PROVE YOU ARE HUMAN: TURN HEAD SIDEWAYS') : 'CAMERA INITIALIZING...'}
+                  </Text>
                 </View>
               </View>
             )}

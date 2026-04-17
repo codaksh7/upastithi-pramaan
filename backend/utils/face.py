@@ -12,18 +12,14 @@ import io
 THRESHOLD = 0.5  # 0.4 = strict | 0.5 = balanced | 0.6 = lenient
 
 
-def get_face_encoding_from_bytes(image_bytes: bytes) -> list[float]:
+def get_face_data_from_bytes(image_bytes: bytes) -> tuple[list[float], dict]:
     """
-    Takes raw image bytes (from an uploaded file),
-    detects exactly one face, and returns a 128-float embedding.
-
-    Raises ValueError if 0 or 2+ faces are found.
+    Takes raw image bytes, detects exactly one face, and returns a tuple of
+    (128-float embedding, face_landmarks dict).
     """
-    # Convert bytes → PIL Image → numpy array (RGB)
     pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     image_np = np.array(pil_image)
 
-    # Detect face locations
     face_locations = face_recognition.face_locations(image_np)
 
     if len(face_locations) == 0:
@@ -32,12 +28,61 @@ def get_face_encoding_from_bytes(image_bytes: bytes) -> list[float]:
     if len(face_locations) > 1:
         raise ValueError("Multiple faces detected. Please upload a single face image.")
 
-    # Generate 128-d embedding
     encoding = face_recognition.face_encodings(image_np, face_locations)[0]
+    
+    landmarks_list = face_recognition.face_landmarks(image_np, face_locations)
+    landmarks = landmarks_list[0] if landmarks_list else {}
 
-    # Return as plain Python list (JSON-serializable for Supabase JSONB)
-    return encoding.tolist()
+    return encoding.tolist(), landmarks
 
+
+def get_face_encoding_from_bytes(image_bytes: bytes) -> list[float]:
+    """Fallback legacy method for scripts that only want the embedding."""
+    enc, _ = get_face_data_from_bytes(image_bytes)
+    return enc
+
+
+def verify_liveness(landmarks: dict, challenge: str) -> bool:
+    """
+    Evaluates geometric heuristics on 68 tracking points to prove 3D liveness.
+    """
+    if not challenge:
+        return True
+    
+    challenge = challenge.upper()
+    chin = landmarks.get("chin", [])
+    if len(chin) < 17:
+        return False
+        
+    face_width = abs(chin[16][0] - chin[0][0])
+    
+    if challenge == "SMILE":
+        top_lip = landmarks.get("top_lip", [])
+        if len(top_lip) < 7:
+            return False
+        mouth_width = abs(top_lip[6][0] - top_lip[0][0])
+        # A standard neutral mouth is ~0.33 of face width. A smile pushes it > 0.38.
+        return (mouth_width / face_width) > 0.38
+        
+    elif challenge == "TURN_HEAD":
+        nose_tip = landmarks.get("nose_tip", [])
+        if len(nose_tip) < 3:
+            return False
+        nose_x = nose_tip[2][0]
+        
+        # Check distance from nose to the left/right extreme bounds of the face
+        dist_to_left = abs(chin[16][0] - nose_x)
+        dist_to_right = abs(chin[0][0] - nose_x)
+        
+        # If the head is turned, the nose will be much closer to one side of the 2D bounding box
+        if min(dist_to_left, dist_to_right) == 0:
+            return True
+        ratio = max(dist_to_left, dist_to_right) / min(dist_to_left, dist_to_right)
+        
+        # Ratio > 1.35 indicates a significant 3D head yaw rotation
+        return ratio > 1.35
+        
+    return True
 
 def compare_encodings(
     stored_embedding: list[float],

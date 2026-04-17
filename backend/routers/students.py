@@ -155,15 +155,22 @@ def mark_attendance(body: MarkAttendanceRequest, user: dict = Depends(student_on
         if not getattr(body, "image_base64", None):
             raise HTTPException(400, "Face scan is required to mark attendance.")
 
+        from utils.face import get_face_data_from_bytes, verify_liveness
         try:
             img_str = body.image_base64
             if "base64," in img_str:
                 img_str = img_str.split("base64,")[1]
                 
             image_bytes = base64.b64decode(img_str)
-            incoming_embedding = get_face_encoding_from_bytes(image_bytes)
+            incoming_embedding, landmarks = get_face_data_from_bytes(image_bytes)
         except Exception as e:
             raise HTTPException(400, f"Error processing face image: {str(e)}")
+            
+        # Verify Liveness Challenge
+        if body.liveness_challenge:
+            liveness_passed = verify_liveness(landmarks, body.liveness_challenge)
+            if not liveness_passed:
+                raise HTTPException(403, f"Liveness check failed! You must follow the challenge: {body.liveness_challenge}")
 
         # Fetch stored embedding from students table
         student_record = db.table("students").select("face_images").eq("id", user["sub"]).maybe_single().execute()
@@ -176,12 +183,9 @@ def mark_attendance(body: MarkAttendanceRequest, user: dict = Depends(student_on
         
         # If the stored_embedding is a string path (from the mobile app registration)
         if isinstance(stored_embedding, str):
-            # Attempt to download the image from the bucket. Common buckets for this project: 'faces' or 'student-faces'.
-            # Based on the path 'user_id/hash.jpg', it was uploaded to a public bucket. 
-            # We'll just fetch the public URL and download it!
             path = stored_embedding
-            # The bucket name used in the RN app is 'student_faces'
             try:
+                from utils.face import get_face_encoding_from_bytes
                 res = db.storage.from_("student_faces").download(path)
                 stored_embedding = get_face_encoding_from_bytes(res)
             except Exception as store_err:
@@ -192,24 +196,37 @@ def mark_attendance(body: MarkAttendanceRequest, user: dict = Depends(student_on
         if not is_match:
             raise HTTPException(403, f"Face verification failed. Similarity: {similarity}%. Please try again in better lighting.")
 
-        face_verified = True
-        confidence = similarity
+        # 5. FRAUD Scoring Engine
+        fraud_score = 0
+        fraud_flag = None
+        
+        recent_mac_users = db.table("attendance_records").select("id").eq(
+            "session_id", body.session_id
+        ).eq("frontend_mac", body.mac_address).execute().data
+        
+        if recent_mac_users and len(recent_mac_users) > 0:
+            fraud_score = 85
+            fraud_flag = "DEVICE_SHARING_DETECTED"
 
-        # 5. Insert attendance record
+        # 6. Insert attendance record
         now_iso = datetime.now(timezone.utc).isoformat()
         db.table("attendance_records").insert({
             "session_id": body.session_id,
             "student_id": user["sub"],
             "mac_verified": True,
-            "face_verified": face_verified,
-            "confidence": confidence,
-            "marked_at": now_iso
+            "face_verified": True,
+            "confidence": similarity,
+            "marked_at": now_iso,
+            "fraud_score": fraud_score,
+            "fraud_flag": fraud_flag,
+            "frontend_mac": body.mac_address
         }).execute()
 
         return {"message": "Attendance marked successfully"}
 
     except HTTPException:
         raise
+
     except Exception as e:
         import traceback
         error_trace = traceback.format_exc()

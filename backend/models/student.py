@@ -34,6 +34,7 @@ class MarkAttendanceRequest(BaseModel):
     image_base64: Optional[str] = None
     twofa_code: Optional[str] = None
     wifi_verified: bool = False
+    liveness_challenge: Optional[str] = None
 
 
 class Verify2FARequest(BaseModel):
