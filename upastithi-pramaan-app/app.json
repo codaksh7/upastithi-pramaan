@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Upastithi-Pramaan",
-    "slug": "upastithi-pramaan",
+    "slug": "upma",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/Updated-icon--2.png",
@@ -74,14 +74,15 @@
           "bluetoothAlwaysPermission": "Allow Upastithi-Pramaan to use Bluetooth for attendance proximity verification."
         }
       ],
-      "./plugins/withBLE"
+      "./plugins/withBLE",
+      "expo-font"
     ],
     "scheme": "upastithi",
     "extra": {
       "eas": {
-        "projectId": "5b401684-c18b-46ae-81a7-7950cf1763b4"
+        "projectId": "717cb2a8-f178-4a22-bd07-7d7e3ee4b1a9"
       }
     },
-    "owner": "babayaga296"
+    "owner": "crces-organization"
   }
 }

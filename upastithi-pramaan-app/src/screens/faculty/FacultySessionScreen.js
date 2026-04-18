@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, Alert, Switch, Animated,
+  RefreshControl, Alert, Switch, Animated, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,7 +10,6 @@ import * as Haptics from 'expo-haptics';
 import { facultyApi } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { BleManager } from 'react-native-ble-plx';
-import * as Device from 'expo-device';
 import Background from '../../components/Background';
 import { GlowCard, Badge, CyberButton, SectionLabel, PulseDot, Divider, LoadingScreen } from '../../components/UI';
 import { Colors, Spacing } from '../../utils/theme';
