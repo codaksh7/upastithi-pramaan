@@ -414,3 +414,110 @@ def export_report(
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+# ── Reports / JSON View ──────────────────────────────────────────────────────
+@router.get("/reports/{report_type}/view")
+def view_report(
+    report_type: str,
+    from_date: str = Query(None, description="Start date (YYYY-MM-DD), inclusive"),
+    to_date:   str = Query(None, description="End date   (YYYY-MM-DD), inclusive"),
+    user: dict = Depends(faculty_only),
+):
+    """
+    Same data as export_report but returns JSON for in-page display.
+    Each row includes the attendance_record id and session_id for override support.
+    """
+    db = get_supabase()
+    sessions = db.table("sessions").select("id").eq("faculty_id", user["sub"]).execute().data or []
+    session_ids = [s["id"] for s in sessions]
+
+    records = []
+    if session_ids:
+        records = db.table("attendance_records").select(
+            "id, session_id, student_id, face_verified, mac_verified, confidence, marked_at, "
+            "students!inner(roll, name), sessions!inner(started_at, subjects!inner(code, name))"
+        ).in_("session_id", session_ids).execute().data or []
+
+    rows = []
+    for rec in records:
+        stu  = rec.get("students", {})
+        sess = rec.get("sessions", {})
+        subj = (sess.get("subjects") or {})
+        date_str = sess.get("started_at", "")[:10]
+
+        # ── Date-range filter ──────────────────────────────────────────────────
+        if from_date and date_str < from_date:
+            continue
+        if to_date and date_str > to_date:
+            continue
+
+        rows.append({
+            "record_id":     rec.get("id"),
+            "session_id":    rec.get("session_id"),
+            "student_id":    rec.get("student_id"),
+            "roll":          stu.get("roll", ""),
+            "name":          stu.get("name", ""),
+            "subject":       subj.get("code", ""),
+            "subject_name":  subj.get("name", ""),
+            "date":          date_str,
+            "face_verified": rec.get("face_verified"),
+            "mac_verified":  rec.get("mac_verified"),
+            "confidence":    rec.get("confidence"),
+            "present":       rec.get("face_verified") and rec.get("mac_verified"),
+            "marked_at":     rec.get("marked_at"),
+        })
+
+    # Sort by date descending, then by roll
+    rows.sort(key=lambda r: (r["date"], r["roll"]), reverse=True)
+    return rows
+
+
+# ── Historical Attendance Override ────────────────────────────────────────────
+@router.patch("/reports/override")
+def historical_override(
+    body: AttendanceOverride,
+    session_id: str = Query(..., description="Session ID of the record to override"),
+    user: dict = Depends(faculty_only),
+):
+    """
+    Override a historical attendance record (not just live sessions).
+    Faculty can toggle a student between present and absent for any past session.
+    """
+    db = get_supabase()
+    # Verify the session belongs to this faculty
+    sess = db.table("sessions").select("faculty_id").eq("id", session_id).maybe_single().execute()
+    sess_data = safe_data(sess)
+    if not sess_data or sess_data["faculty_id"] != user["sub"]:
+        raise HTTPException(403, "Access denied — not your session")
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Check if a record already exists
+    res = db.table("attendance_records").select("id").eq(
+        "session_id", session_id
+    ).eq("student_id", body.student_id).limit(1).execute()
+
+    existing_data = res.data[0] if res.data else None
+
+    if existing_data:
+        db.table("attendance_records").update({
+            "face_verified": body.present,
+            "mac_verified":  body.present,
+            "marked_at":     now if body.present else None,
+        }).eq("id", existing_data["id"]).execute()
+    else:
+        db.table("attendance_records").insert({
+            "session_id":    session_id,
+            "student_id":    body.student_id,
+            "face_verified": body.present,
+            "mac_verified":  body.present,
+            "marked_at":     now if body.present else None,
+        }).execute()
+
+    db.table("audit_logs").insert({
+        "actor_id": user["sub"],
+        "action":   "HISTORICAL_OVERRIDE",
+        "details":  f"student_id={body.student_id} present={body.present} session_id={session_id}",
+    }).execute()
+    return {"message": "Attendance record updated"}

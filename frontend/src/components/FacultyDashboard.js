@@ -5,7 +5,8 @@ import {
   Scan, Play, Square, Users, CheckCircle2, AlertTriangle,
   Download, BarChart2, Settings, LogOut, Camera,
   Eye, ChevronRight, Bell, Search, Activity,
-  Filter, FileText, Shield, TrendingUp, Menu, X, RefreshCw
+  Filter, FileText, Shield, TrendingUp, Menu, X, RefreshCw,
+  ArrowLeft, Loader, Edit3, XCircle, Check
 } from 'lucide-react';
 import { facultyApi, clearAuth, downloadBlob } from '../api';
 import { useAuth } from '../context/AuthContext';
@@ -64,6 +65,13 @@ export default function FacultyDashboard() {
   /* ── Custom report date range ── */
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
+
+  /* ── Report viewer state ── */
+  const [reportData, setReportData] = useState(null);      // array of rows when viewing
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportType, setReportType] = useState(null);      // which report is currently viewed
+  const [reportSearch, setReportSearch] = useState('');
+  const [overridingId, setOverridingId] = useState(null);  // record_id being toggled
 
   const initials = profile ? profile.name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase() : '??';
 
@@ -210,6 +218,43 @@ export default function FacultyDashboard() {
       const suffix = (fromDate || toDate) ? `_${fromDate || 'start'}_to_${toDate || 'today'}` : '';
       downloadBlob(blob, `${type}${suffix}_report.csv`);
     } catch (err) { alert('Export failed: ' + err.message); }
+  };
+
+  /* ── Load report data for in-page viewing ── */
+  const loadReport = async (type, fromDate, toDate) => {
+    setReportLoading(true);
+    setReportType(type);
+    setReportSearch('');
+    try {
+      const data = await facultyApi.viewReport(type, fromDate, toDate);
+      setReportData(data || []);
+    } catch (err) {
+      alert('Failed to load report: ' + err.message);
+      setReportData(null);
+      setReportType(null);
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
+  /* ── Historical override (from reports page) ── */
+  const historicalOverride = async (sessionId, studentId, currentlyPresent) => {
+    const key = `${sessionId}_${studentId}`;
+    setOverridingId(key);
+    try {
+      await facultyApi.overrideHistorical(sessionId, studentId, !currentlyPresent);
+      // Refresh the current report view
+      setReportData(prev => prev.map(r => {
+        if (r.session_id === sessionId && r.student_id === studentId) {
+          return { ...r, present: !currentlyPresent, face_verified: !currentlyPresent, mac_verified: !currentlyPresent };
+        }
+        return r;
+      }));
+    } catch (err) {
+      alert('Override failed: ' + err.message);
+    } finally {
+      setOverridingId(null);
+    }
   };
 
   const filtered = students.filter(s =>
@@ -510,68 +555,212 @@ export default function FacultyDashboard() {
           {/* ── REPORTS ── */}
           {tab === 'reports' && (
             <div className="fd__tab-content">
-              <div className="fd__reports-grid">
-                {[
-                  { title: 'Daily Report', desc: "Full attendance for today's sessions", icon: <FileText size={19} />, color: 'var(--cyan)', type: 'daily' },
-                  { title: 'Weekly Summary', desc: 'Aggregated data for the past 7 days', icon: <BarChart2 size={19} />, color: 'var(--green)', type: 'weekly' },
-                  { title: 'Defaulter List', desc: 'All students below 75% threshold', icon: <AlertTriangle size={19} />, color: 'var(--red)', type: 'defaulter' },
-                  { title: 'Subject Report', desc: 'Per-subject attendance breakdown', icon: <TrendingUp size={19} />, color: 'var(--amber)', type: 'subject' },
-                  { title: 'Semester Report', desc: 'Complete semester attendance log', icon: <Activity size={19} />, color: 'var(--cyan)', type: 'semester' },
-                  { title: 'Audit Log', desc: 'System events and override history', icon: <Shield size={19} />, color: 'var(--green)', type: 'audit' },
-                ].map((r, i) => (
-                  <div key={i} className="fd__card fd__report-card">
-                    <div className="fd__report-icon" style={{ color: r.color }}>{r.icon}</div>
-                    <div className="fd__report-title">{r.title}</div>
-                    <div className="fd__report-desc">{r.desc}</div>
-                    <button className="fd__btn fd__btn-outline fd__btn-full" onClick={() => exportReport(r.type)}>
-                      <Download size={11} />Export
-                    </button>
-                  </div>
-                ))}
+              {/* ── Report Type Cards (shown when no report is being viewed) ── */}
+              {!reportType && (
+                <>
+                  <div className="fd__reports-grid">
+                    {[
+                      { title: 'Daily Report', desc: "Full attendance for today's sessions", icon: <FileText size={19} />, color: 'var(--cyan)', type: 'daily' },
+                      { title: 'Weekly Summary', desc: 'Aggregated data for the past 7 days', icon: <BarChart2 size={19} />, color: 'var(--green)', type: 'weekly' },
+                      { title: 'Defaulter List', desc: 'All students below 75% threshold', icon: <AlertTriangle size={19} />, color: 'var(--red)', type: 'defaulter' },
+                      { title: 'Subject Report', desc: 'Per-subject attendance breakdown', icon: <TrendingUp size={19} />, color: 'var(--amber)', type: 'subject' },
+                      { title: 'Semester Report', desc: 'Complete semester attendance log', icon: <Activity size={19} />, color: 'var(--cyan)', type: 'semester' },
+                      { title: 'Audit Log', desc: 'System events and override history', icon: <Shield size={19} />, color: 'var(--green)', type: 'audit' },
+                    ].map((r, i) => (
+                      <div key={i} className="fd__card fd__report-card">
+                        <div className="fd__report-icon" style={{ color: r.color }}>{r.icon}</div>
+                        <div className="fd__report-title">{r.title}</div>
+                        <div className="fd__report-desc">{r.desc}</div>
+                        <div style={{ display: 'flex', gap: 8, marginTop: 'auto' }}>
+                          <button className="fd__btn fd__btn-primary" style={{ flex: 1, justifyContent: 'center' }} onClick={() => loadReport(r.type)}>
+                            <Eye size={11} />View
+                          </button>
+                          <button className="fd__btn fd__btn-outline" style={{ flex: 1, justifyContent: 'center' }} onClick={() => exportReport(r.type)}>
+                            <Download size={11} />CSV
+                          </button>
+                        </div>
+                      </div>
+                    ))}
 
-                {/* ── Custom Date-Range Report Card ── */}
-                <div className="fd__card fd__report-card" style={{ border: '1px solid rgba(0,200,255,0.3)', gridColumn: 'span 2' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                    <div className="fd__report-icon" style={{ color: 'var(--cyan)', marginBottom: 0 }}><Download size={19} /></div>
-                    <div>
-                      <div className="fd__report-title" style={{ marginBottom: 0 }}>Custom Date Range</div>
-                      <div className="fd__report-desc">Export attendance for any date range you choose</div>
+                    {/* ── Custom Date-Range Report Card ── */}
+                    <div className="fd__card fd__report-card" style={{ border: '1px solid rgba(0,200,255,0.3)', gridColumn: 'span 2' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                        <div className="fd__report-icon" style={{ color: 'var(--cyan)', marginBottom: 0 }}><Search size={19} /></div>
+                        <div>
+                          <div className="fd__report-title" style={{ marginBottom: 0 }}>Custom Date Range</div>
+                          <div className="fd__report-desc">View or export attendance for any date range</div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+                        <div style={{ flex: 1, minWidth: 140 }}>
+                          <label className="fd__field-label">From</label>
+                          <input
+                            type="date"
+                            className="fd__select"
+                            value={customFrom}
+                            max={new Date().toISOString().split("T")[0]}
+                            onChange={e => setCustomFrom(e.target.value)}
+                            style={{ width: '100%' }}
+                          />
+                        </div>
+                        <div style={{ flex: 1, minWidth: 140 }}>
+                          <label className="fd__field-label">To</label>
+                          <input
+                            type="date"
+                            className="fd__select"
+                            value={customTo}
+                            max={new Date().toISOString().split("T")[0]}
+                            onChange={e => setCustomTo(e.target.value)}
+                            style={{ width: '100%' }}
+                          />
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 10 }}>
+                        <button
+                          className="fd__btn fd__btn-primary" style={{ flex: 1, justifyContent: 'center' }}
+                          onClick={() => {
+                            if (!customFrom && !customTo) { alert('Please select at least one date.'); return; }
+                            loadReport('custom', customFrom || undefined, customTo || undefined);
+                          }}>
+                          <Eye size={11} />View Report
+                        </button>
+                        <button
+                          className="fd__btn fd__btn-outline" style={{ flex: 1, justifyContent: 'center' }}
+                          onClick={() => {
+                            if (!customFrom && !customTo) { alert('Please select at least one date.'); return; }
+                            exportReport('custom', customFrom || undefined, customTo || undefined);
+                          }}>
+                          <Download size={11} />Export CSV
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-                    <div style={{ flex: 1, minWidth: 140 }}>
-                      <label className="fd__field-label">From</label>
-                      <input
-                        type="date"
-                        className="fd__select"
-                        value={customFrom}
-                        max={new Date().toISOString().split("T")[0]}
-                        onChange={e => setCustomFrom(e.target.value)}
-                        style={{ width: '100%' }}
-                      />
+                </>
+              )}
+
+              {/* ── Report Viewer (shown after clicking View) ── */}
+              {reportType && (
+                <div>
+                  {/* Header row */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18, gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <button
+                        className="fd__btn fd__btn-outline"
+                        onClick={() => { setReportType(null); setReportData(null); }}
+                        style={{ padding: '8px 14px' }}>
+                        <ArrowLeft size={13} />Back
+                      </button>
+                      <div>
+                        <div className="fd__topbar-title" style={{ fontSize: '0.85rem' }}>
+                          {reportType.charAt(0).toUpperCase() + reportType.slice(1)} Report
+                        </div>
+                        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.56rem', color: 'var(--text-dim)', marginTop: 2 }}>
+                          {reportData ? `${reportData.length} record${reportData.length !== 1 ? 's' : ''}` : 'Loading…'}
+                        </div>
+                      </div>
                     </div>
-                    <div style={{ flex: 1, minWidth: 140 }}>
-                      <label className="fd__field-label">To</label>
-                      <input
-                        type="date"
-                        className="fd__select"
-                        value={customTo}
-                        max={new Date().toISOString().split("T")[0]}
-                        onChange={e => setCustomTo(e.target.value)}
-                        style={{ width: '100%' }}
-                      />
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <div style={{ position: 'relative' }}>
+                        <Search size={13} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-dim)', pointerEvents: 'none' }} />
+                        <input
+                          className="fd__search-input"
+                          style={{ paddingLeft: 34, width: 220 }}
+                          placeholder="Search by name, roll, subject…"
+                          value={reportSearch}
+                          onChange={e => setReportSearch(e.target.value)}
+                        />
+                      </div>
+                      <button className="fd__btn fd__btn-outline" onClick={() => loadReport(reportType, customFrom || undefined, customTo || undefined)}>
+                        <RefreshCw size={11} />Refresh
+                      </button>
+                      <button className="fd__btn fd__btn-primary" onClick={() => exportReport(reportType, customFrom || undefined, customTo || undefined)}>
+                        <Download size={11} />Export CSV
+                      </button>
                     </div>
                   </div>
-                  <button
-                    className="fd__btn fd__btn-primary fd__btn-full"
-                    onClick={() => {
-                      if (!customFrom && !customTo) { alert('Please select at least one date.'); return; }
-                      exportReport('custom', customFrom || undefined, customTo || undefined);
-                    }}>
-                    <Download size={11} />Export Custom Report
-                  </button>
+
+                  {/* Loading state */}
+                  {reportLoading && (
+                    <div className="fd__card" style={{ padding: 40, textAlign: 'center' }}>
+                      <Loader size={24} color="var(--cyan)" style={{ animation: 'spin 1s linear infinite' }} />
+                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--text-dim)', marginTop: 12, letterSpacing: '0.08em' }}>LOADING REPORT DATA…</div>
+                    </div>
+                  )}
+
+                  {/* Data table */}
+                  {!reportLoading && reportData && (
+                    <div className="fd__card">
+                      <div className="fd__table-wrap">
+                        <table className="fd__table">
+                          <thead>
+                            <tr>
+                              {['Roll No', 'Name', 'Subject', 'Date', 'Face', 'BLE', 'Conf.', 'Status', 'Action'].map(h => (
+                                <th key={h}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(() => {
+                              const q = reportSearch.toLowerCase();
+                              const filteredRows = reportData.filter(r =>
+                                r.name?.toLowerCase().includes(q) ||
+                                r.roll?.toLowerCase().includes(q) ||
+                                r.subject?.toLowerCase().includes(q) ||
+                                r.subject_name?.toLowerCase().includes(q) ||
+                                r.date?.includes(q)
+                              );
+                              if (filteredRows.length === 0) {
+                                return (
+                                  <tr>
+                                    <td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: 28, fontFamily: 'var(--font-mono)', fontSize: '0.65rem', letterSpacing: '0.08em' }}>
+                                      {reportData.length === 0 ? 'No records found for this report.' : 'No records match your search.'}
+                                    </td>
+                                  </tr>
+                                );
+                              }
+                              return filteredRows.map((r) => {
+                                const isPresent = r.present;
+                                const isLoading = overridingId === `${r.session_id}_${r.student_id}`;
+                                return (
+                                  <tr key={`${r.record_id || ''}_${r.session_id}_${r.student_id}`}>
+                                    <td className="fd__table-roll">{r.roll}</td>
+                                    <td className="fd__table-name">{r.name}</td>
+                                    <td>
+                                      <span className="fd__badge fd__badge-cyan" style={{ fontSize: '0.52rem' }}>{r.subject}</span>
+                                    </td>
+                                    <td className="fd__table-mono">{r.date}</td>
+                                    <td>{r.face_verified ? <CheckCircle2 size={15} color="var(--green)" /> : <XCircle size={15} color="var(--red)" />}</td>
+                                    <td>{r.mac_verified ? <CheckCircle2 size={15} color="var(--green)" /> : <XCircle size={15} color="var(--red)" />}</td>
+                                    <td className="fd__table-mono">{r.confidence ? `${r.confidence}%` : '—'}</td>
+                                    <td>
+                                      {isPresent
+                                        ? <span className="fd__badge fd__badge-green"><CheckCircle2 size={9} />Present</span>
+                                        : <span className="fd__badge fd__badge-red"><AlertTriangle size={9} />Absent</span>}
+                                    </td>
+                                    <td>
+                                      <button
+                                        className={`fd__override-btn${isPresent ? ' fd__override-btn--revert' : ''}`}
+                                        disabled={isLoading}
+                                        onClick={() => historicalOverride(r.session_id, r.student_id, isPresent)}
+                                        title={isPresent ? 'Mark as absent' : 'Mark as present'}>
+                                        {isLoading
+                                          ? <Loader size={11} style={{ animation: 'spin 0.8s linear infinite' }} />
+                                          : isPresent
+                                            ? <><XCircle size={11} /> Mark Absent</>
+                                            : <><Check size={11} /> Mark Present</>}
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              });
+                            })()}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
+              )}
             </div>
           )}
 

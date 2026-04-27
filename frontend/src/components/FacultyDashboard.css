@@ -313,3 +313,45 @@
 @media (max-width: 400px) {
   .fd__stats-grid    { grid-template-columns: 1fr; }
 }
+
+/* ── Loading spinner animation ── */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ── Report card flexbox layout (buttons at bottom) ── */
+.fd__report-card {
+  display: flex;
+  flex-direction: column;
+}
+.fd__report-desc {
+  flex: 1;
+}
+
+/* ── Override button enhancements for reports table ── */
+.fd__override-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.fd__override-btn:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+/* ── Search input in report viewer ── */
+.fd__search-input {
+  padding: 10px 14px;
+  background: rgba(0,200,255,.03);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  outline: none;
+  transition: border-color .3s, box-shadow .3s;
+}
+.fd__search-input:focus {
+  border-color: var(--cyan);
+  box-shadow: 0 0 16px var(--cyan-glow);
+}

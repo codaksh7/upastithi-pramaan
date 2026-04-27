@@ -118,6 +118,15 @@ export const facultyApi = {
         const qs = params.toString() ? `?${params.toString()}` : '';
         return request('GET', `/faculty/reports/${type}${qs}`);
     },
+    viewReport: (type, fromDate, toDate) => {
+        const params = new URLSearchParams();
+        if (fromDate) params.append('from_date', fromDate);
+        if (toDate) params.append('to_date', toDate);
+        const qs = params.toString() ? `?${params.toString()}` : '';
+        return api.get(`/faculty/reports/${type}/view${qs}`);
+    },
+    overrideHistorical: (sessionId, studentId, present) =>
+        api.patch(`/faculty/reports/override?session_id=${encodeURIComponent(sessionId)}`, { student_id: studentId, present }),
     refreshCode: (sessionId) => api.post(`/faculty/sessions/${sessionId}/refresh-code`),
 };
 
