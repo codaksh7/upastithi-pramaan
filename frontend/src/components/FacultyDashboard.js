@@ -6,7 +6,7 @@ import {
   Download, BarChart2, Settings, LogOut, Camera,
   Eye, ChevronRight, Bell, Search, Activity,
   Filter, FileText, Shield, TrendingUp, Menu, X, RefreshCw,
-  ArrowLeft, Loader, Edit3, XCircle, Check
+  ArrowLeft, Loader, XCircle, Check
 } from 'lucide-react';
 import { facultyApi, clearAuth, downloadBlob } from '../api';
 import { useAuth } from '../context/AuthContext';

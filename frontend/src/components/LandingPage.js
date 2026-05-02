@@ -5,7 +5,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import {
   Scan, Shield, Cpu, AlertTriangle, CheckCircle2, ArrowRight,
   Eye, Bluetooth, Zap, BarChart3, Users, Download, Clock,
-  Camera, Network, Database, Code2, Layers, Target, Globe,
+  Camera, Database, Code2, Layers, Target, Globe,
   ChevronDown, Play
 } from 'lucide-react';
 import './LandingPage.css';
