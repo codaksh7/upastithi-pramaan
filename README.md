@@ -1,6 +1,6 @@
 <div align="center">
   
-# 🛡️ Upastithi-Pramaan
+# <img src="https://img.icons8.com/fluency/48/security-checked.png" width="36" /> Upastithi-Pramaan
 ### **The Elite Multi-Factor Smart Attendance Architecture**
 
 [![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
@@ -15,26 +15,22 @@ An award-winning, state-of-the-art attendance system ensuring zero-proxy through
 
 ---
 
-## ⚡ The Ultimate 4-Layer Verification Protocol
+## <img src="https://img.icons8.com/fluency/48/lightning-bolt.png" width="28" /> The Ultimate 4-Layer Verification Protocol
 
 Proxy attendance is mathematically and physically impossible. The system verifies identity through an impenetrable **Layer-4 Architecture**:
 
 | Layer | Technology | Security Function |
 | :---: | :--- | :--- |
-| **1️⃣** | **Liveness + Facial Recognition** | Verifies 3D liveness (Smile/Blink/Turn) and maps 128-D facial embeddings using `face_recognition` (HOG+CNN) against the Supabase secured storage. |
-| **2️⃣** | **BLE Environmental Proximity** | Validates spatial proximity by matching emitted BLE (Bluetooth Low Energy) beacon signatures between the Faculty and Student devices. |
-| **3️⃣** | **Rotating 2FA Cryptography** | Requires a live 6-digit Time-Based One-Time Password (TOTP) generated server-side via APScheduler, rotating every 5 minutes. |
-| **4️⃣** | **MAC Address Whitelisting** | Confirms request origin via registered Device MAC address ensuring attendance is marked from an approved, untampered device. |
+| <img src="https://img.icons8.com/fluency/48/1-circle.png" width="24" /> | **Liveness + Facial Recognition** | Verifies 3D liveness (Smile/Blink/Turn) and maps 128-D facial embeddings using `face_recognition` (HOG+CNN) against the Supabase secured storage. |
+| <img src="https://img.icons8.com/fluency/48/2-circle.png" width="24" /> | **BLE Environmental Proximity** | Validates spatial proximity by matching emitted BLE (Bluetooth Low Energy) beacon signatures between the Faculty and Student devices. |
+| <img src="https://img.icons8.com/fluency/48/3-circle.png" width="24" /> | **Rotating 2FA Cryptography** | Requires a live 6-digit Time-Based One-Time Password (TOTP) generated server-side via APScheduler, rotating every 5 minutes. |
+| <img src="https://img.icons8.com/fluency/48/4-circle.png" width="24" /> | **MAC Address Whitelisting** | Confirms request origin via registered Device MAC address ensuring attendance is marked from an approved, untampered device. |
 
 ---
 
-## 🚀 Architectural Overview
+## <img src="https://img.icons8.com/fluency/48/rocket.png" width="28" /> Architectural Overview
 
 The system features a decoupled, microservices-oriented architecture using standard containerization via Docker.
-
-<div align="center">
-  <img src="architecture_diagram.png" width="80%" alt="Upastithi-Pramaan System Architecture" />
-</div>
 
 <details>
 <summary><b>View Sequence Flow (Mermaid diagram)</b></summary>
@@ -74,21 +70,21 @@ sequenceDiagram
 
 ---
 
-## 💻 Elite Web & Mobile Dashboards (100% Parity)
+## <img src="https://img.icons8.com/fluency/48/imac.png" width="28" /> Elite Web & Mobile Dashboards (100% Parity)
 
 The client interfaces deliver a premium, fluid aesthetic utilizing **GSAP** micro-interactions on the Web and **Reanimated** on Mobile.
 
-### 👥 1. Student Portal
+### <img src="https://img.icons8.com/fluency/48/group.png" width="24" /> 1. Student Portal
 * **Automated Attendance:** One-tap initialization kicking off the 4-layer validation.
 * **Attendance Ledger:** Subject-wise breakdown, historical progress bars, and calendar heatmap.
 * **System Operations:** View Notifications, File Disputes, and trigger Device Change Requests.
 
-### 🎓 2. Faculty Command Center
+### <img src="https://img.icons8.com/fluency/48/graduation-cap.png" width="24" /> 2. Faculty Command Center
 * **Live Session Broadcasting:** Project real-time rotating 2FA codes directly to a projector/screen.
 * **Instant Roster Control:** Monitor incoming attendance matches live. Faculty override capabilities provided.
 * **Deep Analytics:** 30-day class trends, dynamic defaulter lists (sub-75%), and CSV Exports (Date-ranged).
 
-### ⚙️ 3. Admin Control Panel
+### <img src="https://img.icons8.com/fluency/48/settings.png" width="24" /> 3. Admin Control Panel
 * **Central System Health:** Monitor total enrollments, live sessions, and active API hits.
 * **User & AI Management:** Perform single/bulk CSV uploads for Students & Faculty. View & trigger Face Model retrains.
 * **Dispute & Device Resolutions:** One-click approvals for flagged devices and pending attendance disputes.
@@ -96,21 +92,21 @@ The client interfaces deliver a premium, fluid aesthetic utilizing **GSAP** micr
 
 ---
 
-## 🛠️ Technology Stack & Libraries
+## <img src="https://img.icons8.com/fluency/48/wrench.png" width="28" /> Technology Stack & Libraries
 
-### 🐍 Backend Infrastructure
+### <img src="https://img.icons8.com/color/48/python--v1.png" width="24" /> Backend Infrastructure
 - **FastAPI / Uvicorn:** High-performance async Python framework.
 - **Supabase (PostgreSQL / Storage):** Scalable Database and Face Image storage.
 - **Python-Jose & Bcrypt:** Secure JWT role-based Auth & password hashing.
 - **APScheduler:** Background daemon for synchronized TOTP code rotations.
 - **Dlib & Face Recognition (Numpy):** High-accuracy ML modeling.
 
-### 🌐 Web Client (React.js)
+### <img src="https://img.icons8.com/fluency/48/domain.png" width="24" /> Web Client (React.js)
 - **React Router DOM:** Dynamic SPA routing.
 - **GSAP & ScrollTrigger:** Award-winning micro-animations, magnetic buttons, and fluid page transitions.
 - **Lucide React / React Icons:** Crisp, world-class SVGs for elite visual typography.
 
-### 📱 Mobile Client (React Native / Expo)
+### <img src="https://img.icons8.com/fluency/48/smartphone.png" width="24" /> Mobile Client (React Native / Expo)
 - **Expo Camera:** Custom face frame alignment and liveness capture interface.
 - **React Native BLE Plx:** Low-level environmental Bluetooth peripheral scanning.
 - **Expo Secure Store:** Hardware-encrypted JWT keychain storage.
@@ -118,7 +114,7 @@ The client interfaces deliver a premium, fluid aesthetic utilizing **GSAP** micr
 
 ---
 
-## ⚡ Quick Start & Deployment Guide
+## <img src="https://img.icons8.com/fluency/48/flash-on.png" width="28" /> Quick Start & Deployment Guide
 
 ### Environment Preparation
 
@@ -163,7 +159,7 @@ npx expo start
 
 ---
 
-## 🔑 Default Provisioned Roles
+## <img src="https://img.icons8.com/fluency/48/key.png" width="28" /> Default Provisioned Roles
 
 | Role Level | Identity Code | Default Password | Access Tier |
 | :--- | :--- | :--- | :--- |
