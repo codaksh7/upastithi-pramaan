@@ -172,7 +172,5 @@ npx expo start
 ---
 
 <div align="center">
-  <i>Developed for Fr. Conceicao Rodrigues College of Engineering, Mumbai<br/>
-  TE Computer Engineering, Division B Mini Project 2025-26</i><br/>
-  <b>Team: Devansh Nayak (10268), Blaise Rodrigues (10275), Daksh Thakkar (10283), Aryan Verma (10287)</b>
+  <b>Team: Devansh Nayak, Blaise Rodrigues, Daksh Thakkar, Aryan Verma</b>
 </div>
