@@ -168,9 +168,3 @@ npx expo start
 | **Student** | *(Enroll via Admin)* | `********` | Attendance verification, Self-tracking, Device Requests |
 
 *(Note: Passwords are hashed in Supabase via 72-byte bcrypt salts. Please cycle defaults upon production launch.)*
-
----
-
-<div align="center">
-  <b>Team: Devansh Nayak, Blaise Rodrigues, Daksh Thakkar, Aryan Verma</b>
-</div>
